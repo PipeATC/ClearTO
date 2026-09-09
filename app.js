@@ -35,14 +35,92 @@
   // ---- Navegación por pestañas ----
   let activeTab = "dashboard";
   let selectedFlight = null; // callsign en detalle de D-Clearance
+  let searchQuery = "";      // filtro activo del buscador de vuelos
+
+  // Formato típico de indicativo: 2-3 letras + 1-4 dígitos (+ sufijo opcional).
+  const CALLSIGN_RE = /^[A-Z]{2,3}\d{1,4}[A-Z]?$/;
+  const selectable = st => st === "ready" || st === "delivered" || st === "acknowledged";
 
   const app = $("#app");
 
-  function nowZ() {
-    const d = new Date();
-    const hh = String(d.getUTCHours()).padStart(2, "0");
-    const mm = String(d.getUTCMinutes()).padStart(2, "0");
-    return `${hh}:${mm}Z`;
+  // ---------- Tiempo Z vivo y utilidades ----------
+  // Ancla de sesión: instante en que arrancó la app. Los telegramas (D-ATIS y
+  // PDC) y la vigencia de las autorizaciones se derivan de este reloj real en
+  // vez de strings fijos, y se refrescan solos.
+  const T0 = new Date();
+  const pad2 = n => String(n).padStart(2, "0");
+  const zClock   = d => `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}Z`; // 15:40Z
+  const zCompact = d => `${pad2(d.getUTCHours())}${pad2(d.getUTCMinutes())}Z`;  // 1540Z
+  const addMin   = (d, m) => new Date(d.getTime() + m * 60000);
+  function nowZ() { return zClock(new Date()); }
+  const agoMin = d => Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  function humanAge(min) {
+    if (min <= 0) return "recién";
+    if (min === 1) return "hace 1 min";
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.floor(min / 60), m = min % 60;
+    return `hace ${h}h${m ? ` ${m}m` : ""}`;
+  }
+
+  // Tiempos derivados de un bloque D-ATIS (emisión / vigencia).
+  function atisTimes(a) {
+    const issued = addMin(T0, -(a.issuedAgoMin || 0));
+    return { issued, valid: addMin(issued, a.validForMin || 60) };
+  }
+  // Telegrama D-ATIS crudo, armado con el tiempo de emisión vivo.
+  function atisRaw(a, t) {
+    return [
+      `SCEL ATIS DEP ${a.letter} ${zCompact(t.issued)}`,
+      `RWY ${a.depRwy} EN USO`,
+      `VIENTO ${a.wind}KT VRB 160-220`,
+      "VIS 10KM FEW040 BKN100",
+      `${a.temp}/${a.dew} Q${a.qnh} NOSIG`,
+      `APCH ILS Y ${a.arrRwy}`,
+      "EXP SALIDA FLW SID SEGUN PLAN",
+      "CONTACTO SANTIAGO CLNC 121.1 TRAS COLACION",
+      "--- TRANSMISION DIRECTA VIA APP CLEARTO ---",
+      "DGAC SCEL ---"
+    ].join("\n");
+  }
+  // Tiempos derivados de una clearance (emisión / expiración).
+  function pdcTimes(c) {
+    const issued = addMin(T0, -(c.issuedAgoMin || 0));
+    return { issued, expires: addMin(issued, c.validForMin || 60) };
+  }
+  // Telegrama PDC crudo, armado con el tiempo de emisión vivo.
+  function pdcRaw(f, t) {
+    const c = f.clearance;
+    return [
+      `PDC SCEL ${zCompact(t.issued)} ${f.callsign}`,
+      `CLRD TO ${f.dest} VIA ${c.sid.replace(/\s+/g, "")}`,
+      `DEP RWY ${c.depRwy} CLB ${c.climbAlt.replace(/\s+/g, "")}`,
+      `SQUAWK ${c.squawk}`,
+      "ENLACE DIRECTO APP CLEARTO DGAC CHILE"
+    ].join("\n");
+  }
+  // Estado de expiración de una clearance con aviso visual.
+  function expiryStatus(expires) {
+    const rem = Math.round((expires.getTime() - Date.now()) / 60000);
+    if (rem < 0) return {
+      key: "expired", rem, label: "EXPIRADA", detail: `venció ${zClock(expires)}`,
+      cls: "bg-red-50 text-red-700 border-red-200", icon: "error", pulse: false
+    };
+    if (rem <= 10) return {
+      key: "soon", rem, label: "POR EXPIRAR", detail: `${rem} min · exp ${zClock(expires)}`,
+      cls: "bg-amber-50 text-amber-800 border-amber-200", icon: "schedule", pulse: true
+    };
+    return {
+      key: "valid", rem, label: "VIGENTE", detail: `exp ${zClock(expires)} · ${rem} min`,
+      cls: "bg-emerald-50 text-emerald-800 border-emerald-200", icon: "schedule", pulse: false
+    };
+  }
+  // Chip de expiración (con id estable para refresco en vivo).
+  function expChip(s) {
+    return `<div id="expChip" class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${s.cls}">
+        <span class="material-symbols-outlined text-[16px] ${s.pulse ? "animate-pulse" : ""}">${s.icon}</span>
+        <span class="text-[11px] font-mono font-bold">${s.label}</span>
+        <span class="text-[10px] font-mono opacity-80">${s.detail}</span>
+      </div>`;
   }
 
   // ---------- Componentes reutilizables ----------
@@ -262,6 +340,9 @@
   let atisSide = "dep";
   function viewAtis() {
     const a = ATIS.dep;
+    const t = atisTimes(a);            // emisión / vigencia vivas
+    const raw = atisRaw(a, t);         // telegrama con tiempo de emisión vivo
+    const qbTime = zClock(atisTimes(ATIS.arr).issued); // INFO QUEBEC (previo)
     const bigMetric = (label, val, unit, sub, icon, color) => `
       ${card(`
         <div class="p-3.5 space-y-1">
@@ -297,7 +378,7 @@
         <div class="w-full bg-[#fffbeb] border border-amber-200/90 rounded-xl p-3.5 shadow-sm flex items-start gap-3">
           <span class="material-symbols-outlined text-amber-700 text-[20px] shrink-0 mt-0.5">swap_horiz</span>
           <div class="flex flex-col min-w-0 flex-1">
-            <span class="text-[11px] text-[#92400e] font-bold tracking-wider uppercase font-mono">DELTA VS INFO QUEBEC (1430Z)</span>
+            <span class="text-[11px] text-[#92400e] font-bold tracking-wider uppercase font-mono">DELTA VS INFO QUEBEC (${qbTime})</span>
             <p class="font-mono text-[12px] text-[#92400e] mt-0.5 leading-snug">QNH descendió <b>1 hPa</b> (1016→1015) · Viento viró <b>10° izquierda</b> · Temp de rocío estable.</p>
           </div>
         </div>
@@ -313,11 +394,15 @@
         </div>
 
         <div class="flex items-center justify-between px-1">
-          <span class="text-[11px] font-mono text-slate-500">EMISIÓN: <b class="text-navy">${a.time}</b></span>
+          <span class="text-[11px] font-mono text-slate-500">EMISIÓN: <b class="text-navy">${zCompact(t.issued)}</b></span>
           <div class="flex items-center gap-2">
-            <span class="text-[11px] font-mono text-slate-500">VIGENCIA: <b class="text-navy">${a.valid}</b></span>
+            <span class="text-[11px] font-mono text-slate-500">VIGENCIA: <b class="text-navy">${zCompact(t.valid)}</b></span>
             <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono font-bold border border-emerald-200">LIVE</span>
           </div>
+        </div>
+        <div class="flex items-center gap-1.5 px-1 -mt-1.5">
+          <span class="material-symbols-outlined text-slate-400 text-[14px]">cell_tower</span>
+          <span class="text-[11px] font-mono text-slate-500">RECIBIDO ${zClock(T0)} · <span id="atisAge">${humanAge(agoMin(T0))}</span></span>
         </div>
 
         <!-- Metrics grid -->
@@ -355,12 +440,12 @@
               <div class="flex items-center gap-2"><span class="material-symbols-outlined text-slate-500 text-[18px]">terminal</span><span class="text-[12px] font-bold text-navy font-mono tracking-wide">TELEGRAMA DIGITAL D-ATIS</span></div>
               <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono font-bold border border-emerald-200">CRC: OK</span>
             </div>
-            <pre class="bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-[12px] text-navy leading-relaxed whitespace-pre-wrap">${a.raw}</pre>
+            <pre class="bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-[12px] text-navy leading-relaxed whitespace-pre-wrap">${raw}</pre>
             <div class="grid grid-cols-2 gap-2.5">
-              <button data-copy="${encodeURIComponent(a.raw)}" class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
+              <button data-copy="${encodeURIComponent(raw)}" class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
                 <span class="material-symbols-outlined text-[18px]">content_copy</span> COPIAR TEXTO
               </button>
-              <button class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
+              <button data-print="${encodeURIComponent(raw)}" data-print-title="D-ATIS SCEL DEP · INFO ${a.word} ${zCompact(t.issued)}" class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
                 <span class="material-symbols-outlined text-[18px]">print</span> IMPRIMIR
               </button>
             </div>
@@ -410,6 +495,36 @@
         </button>`;
     };
 
+    const q = searchQuery.trim().toUpperCase();
+    const list = q ? FLIGHTS.filter(f => f.callsign.includes(q)) : FLIGHTS;
+    const badFormat = q && !CALLSIGN_RE.test(q);
+
+    // Estado vacío enriquecido: sin coincidencias para la búsqueda actual.
+    const emptyState = `
+      <div class="w-full bg-white border border-slate-200/90 rounded-xl shadow-sm p-5 flex flex-col items-center text-center gap-2">
+        <span class="material-symbols-outlined text-slate-300 text-[40px]">flight_land</span>
+        <span class="text-[14px] font-bold text-navy">Sin coincidencias para <span class="font-mono">"${q}"</span></span>
+        <p class="text-[12px] text-slate-500 leading-snug">${badFormat
+          ? "El formato no parece un indicativo. Suele ser 2–3 letras + número (p. ej. <b class='font-mono'>LAN502</b>, <b class='font-mono'>SKU301</b>)."
+          : "Ese vuelo no está en las franjas de salida SCEL. Revisa el indicativo o consulta las franjas activas."}</p>
+        <button id="searchClear" class="mt-1 text-primary font-bold text-[13px] flex items-center gap-1">
+          <span class="material-symbols-outlined text-[18px]">list</span> Ver todas las franjas
+        </button>
+      </div>`;
+
+    // Encabezado: modo búsqueda (con limpiar) o listado normal (con SYNC vivo).
+    const listHeader = q
+      ? `<div class="flex items-center justify-between px-1">
+           <span class="text-[11px] font-mono text-slate-500 tracking-wide">RESULTADOS · "${q}" <span class="text-slate-400">(${list.length})</span></span>
+           <button id="searchClear" class="text-[11px] font-mono text-primary font-bold flex items-center gap-1">
+             <span class="material-symbols-outlined text-[14px]">close</span> LIMPIAR
+           </button>
+         </div>`
+      : `<div class="flex items-center justify-between px-1">
+           <span class="text-[11px] font-mono text-slate-500 tracking-wide">FRANJAS DE SALIDA SCEL</span>
+           <span class="text-[11px] font-mono text-slate-400" id="stripSync">SYNC ${nowZ()}</span>
+         </div>`;
+
     return `
       <div class="flex flex-col w-full px-4 space-y-3 pt-3 select-none">
         ${card(`
@@ -419,19 +534,18 @@
               <span class="text-[15px] font-bold text-navy">Buscar mi vuelo</span>
             </div>
             <p class="text-[12px] text-slate-500 leading-snug">Ingresa tu indicativo para recibir la autorización de salida (PDC) cuando el controlador la marque lista en la franja de progreso.</p>
-            <div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-3">
-              <span class="material-symbols-outlined text-slate-400 text-[20px]">flight</span>
-              <input id="searchCallsign" placeholder="Ej. LAN502" class="w-full bg-transparent font-mono text-[16px] font-bold text-navy tracking-wider outline-none border-0 p-0 uppercase placeholder:font-normal placeholder:text-slate-300" />
+            <div class="flex items-center gap-2 bg-slate-50 border ${badFormat ? "border-amber-300" : "border-slate-200"} rounded-lg px-3 py-3">
+              <span class="material-symbols-outlined ${badFormat ? "text-amber-500" : "text-slate-400"} text-[20px]">flight</span>
+              <input id="searchCallsign" value="${q}" placeholder="Ej. LAN502" class="w-full bg-transparent font-mono text-[16px] font-bold text-navy tracking-wider outline-none border-0 p-0 uppercase placeholder:font-normal placeholder:text-slate-300" />
+              ${q ? `<button id="searchClear" class="text-slate-400 flex items-center px-1"><span class="material-symbols-outlined text-[18px]">close</span></button>` : ""}
               <button id="searchGo" class="text-primary font-bold text-[13px] px-2">BUSCAR</button>
             </div>
+            ${badFormat ? `<p class="text-[11px] text-amber-700 font-mono flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">info</span> Formato de indicativo no reconocido (mostrando coincidencias parciales).</p>` : ""}
           </div>
         `)}
 
-        <div class="flex items-center justify-between px-1">
-          <span class="text-[11px] font-mono text-slate-500 tracking-wide">FRANJAS DE SALIDA SCEL</span>
-          <span class="text-[11px] font-mono text-slate-400" id="stripSync">SYNC ${nowZ()}</span>
-        </div>
-        ${FLIGHTS.map(row).join("")}
+        ${listHeader}
+        ${list.length ? list.map(row).join("") : emptyState}
 
         <!-- Panel simulador de controlador (solo maqueta) -->
         <div class="w-full bg-sky-50/60 border border-dashed border-sky-300 rounded-xl p-3.5 space-y-2">
@@ -453,6 +567,11 @@
     if (!f) { selectedFlight = null; return viewClearanceSearch(); }
     const c = f.clearance;
     const acked = f.stripState === "acknowledged";
+    const t = pdcTimes(c);                 // emisión / expiración vivas
+    const exp = expiryStatus(t.expires);   // estado + aviso visual
+    const expired = exp.key === "expired";
+    const pdcText = pdcRaw(f, t);          // telegrama PDC con tiempo vivo
+    const canWilco = !acked && !expired;
 
     const block = (label, val, sub, accent = "text-navy") => `
       <div class="flex flex-col bg-slate-50 border border-slate-200/80 rounded-lg p-3">
@@ -475,10 +594,7 @@
                 <span class="material-symbols-outlined ${acked ? "text-white" : "text-emerald-700"} text-[18px]">${acked ? "check_circle" : "verified"}</span>
                 <span class="text-[12px] font-bold font-mono ${acked ? "text-white" : "text-emerald-800"}">${acked ? "RECIBIDA · WILCO" : "AUTORIZADO CLEARTO"}</span>
               </div>
-              <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200">
-                <span class="material-symbols-outlined text-amber-700 text-[16px]">schedule</span>
-                <span class="text-[11px] font-mono font-bold text-amber-800">EXP: ${c.expires}</span>
-              </div>
+              ${expChip(exp)}
             </div>
             <div class="flex items-end justify-between">
               <div class="flex flex-col">
@@ -492,6 +608,10 @@
                 <span class="text-[10px] text-slate-400 font-mono">GATE / EOBT</span>
                 <span class="text-[14px] font-mono font-bold text-navy">${f.gate} · ${f.eobt}</span>
               </div>
+            </div>
+            <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-0.5 border-t border-slate-100">
+              <span class="pt-1.5">EMITIDA: <b class="text-navy">${zCompact(t.issued)}</b></span>
+              <span class="pt-1.5">RECIBIDA <span id="pdcAge">${humanAge(agoMin(T0))}</span></span>
             </div>
           </div>
         `)}
@@ -536,11 +656,11 @@
           <div class="p-4 space-y-2.5">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">${dot("emerald")}<span class="text-[12px] font-bold text-navy font-mono tracking-wide leading-tight">AUTORIZACIÓN DIGITAL PDC<br><span class="text-slate-400 font-normal">(CLEARTO SECURE LINK)</span></span></div>
-              <button data-copy="${encodeURIComponent(c.pdcText)}" class="flex items-center gap-1 text-[12px] text-slate-500 font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5">
+              <button data-copy="${encodeURIComponent(pdcText)}" class="flex items-center gap-1 text-[12px] text-slate-500 font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5">
                 <span class="material-symbols-outlined text-[16px]">content_copy</span> COPIAR
               </button>
             </div>
-            <pre class="bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-[12px] text-navy leading-relaxed whitespace-pre-wrap">${c.pdcText}</pre>
+            <pre class="bg-slate-50 border border-slate-200 rounded-lg p-3 font-mono text-[12px] text-navy leading-relaxed whitespace-pre-wrap">${pdcText}</pre>
           </div>
         `)}
 
@@ -551,11 +671,25 @@
             <span class="text-white font-bold tracking-wide">READBACK DIGITAL RECIBIDO · CICLO CERRADO</span>
           </div>
           <p class="text-center text-[11px] text-slate-400 font-mono pb-1">La franja de progreso de vuelo muestra: AUTORIZACIÓN RECIBIDA.</p>
+        ` : expired ? `
+          <div class="w-full bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+            <span class="material-symbols-outlined text-red-600 text-[22px] shrink-0">error</span>
+            <div class="flex flex-col">
+              <span class="text-[13px] font-bold text-red-700 font-mono tracking-wide">AUTORIZACIÓN EXPIRADA</span>
+              <span class="text-[12px] text-red-700/90 font-mono leading-snug">La vigencia (${zClock(t.expires)}) ha vencido. No es válido colacionar; solicita una nueva autorización al controlador.</span>
+            </div>
+          </div>
+          <button id="reqNewBtn" class="w-full bg-navy hover:bg-navy-muted active:scale-[0.99] transition text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-sm">
+            <span class="material-symbols-outlined text-[22px]">refresh</span>
+            <span class="tracking-wide">SOLICITAR NUEVA AUTORIZACIÓN</span>
+          </button>
+          <p class="text-center text-[11px] text-slate-400 font-mono pb-1">El colacionado (WILCO) queda deshabilitado mientras la clearance esté expirada.</p>
         ` : `
           <button id="wilcoBtn" class="w-full bg-primary hover:bg-primary-dark active:scale-[0.99] transition text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 shadow-sm">
             <span class="material-symbols-outlined text-[22px]">done_all</span>
             <span class="tracking-wide">ACEPTAR Y COLACIONAR (WILCO)</span>
           </button>
+          ${exp.key === "soon" ? `<div class="flex items-center justify-center gap-1.5 text-[11px] font-mono text-amber-700"><span class="material-symbols-outlined text-[16px] animate-pulse">schedule</span> Clearance por expirar (${exp.rem} min) — coteja antes de colacionar.</div>` : ""}
           <div class="grid grid-cols-2 gap-2.5">
             <button class="flex items-center justify-center gap-1.5 py-3 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px]">
               <span class="material-symbols-outlined text-[18px]">call</span> CONTACTO VOZ
@@ -633,7 +767,7 @@
           <div class="flex items-center justify-between text-[11px] font-mono text-slate-500"><span>VALID: ${NOTAM.valid}</span><span class="font-bold">${NOTAM.src}</span></div>
         </div>
 
-        <button class="w-full bg-primary hover:bg-primary-dark active:scale-[0.99] transition text-white font-bold py-3.5 rounded-lg flex items-center justify-center gap-2 shadow-sm">
+        <button id="exportPdf" class="w-full bg-primary hover:bg-primary-dark active:scale-[0.99] transition text-white font-bold py-3.5 rounded-lg flex items-center justify-center gap-2 shadow-sm">
           <span class="material-symbols-outlined text-[20px]">picture_as_pdf</span> EXPORTAR A BINDER DE VUELO (PDF)
         </button>
       </div>`;
@@ -648,6 +782,90 @@
     t.innerHTML = `<span class="material-symbols-outlined text-[18px]">${icon}</span>${msg}`;
     document.body.appendChild(t);
     setTimeout(() => { t.style.transition = "opacity .3s"; t.style.opacity = "0"; setTimeout(() => t.remove(), 300); }, 2200);
+  }
+
+  // ============================================================
+  // IMPRESIÓN Y EXPORT PDF
+  // ============================================================
+  // Imprime un telegrama en una hoja monoespaciada limpia (antes placeholder).
+  function printTelegram(text, title) {
+    const w = window.open("", "_blank");
+    if (!w) return toast("Permite ventanas emergentes para imprimir", "print");
+    const esc = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    w.document.write(`<!doctype html><html lang="es"><head><meta charset="utf-8"/>
+      <title>${esc(title)}</title>
+      <style>
+        body{font-family:'JetBrains Mono',ui-monospace,monospace;color:#0b2b5c;margin:32px;}
+        h1{font-family:Arial,Helvetica,sans-serif;font-size:15px;border-bottom:2px solid #059669;padding-bottom:6px;}
+        pre{white-space:pre-wrap;font-size:12px;line-height:1.55;}
+        .foot{margin-top:18px;font-size:10px;color:#64748b;border-top:1px solid #e2e8f0;padding-top:6px;}
+      </style></head><body>
+      <h1>ClearTO · ${esc(title)}</h1>
+      <pre>${esc(text)}</pre>
+      <div class="foot">Impreso vía App ClearTO — DGAC Chile · ${esc(nowZ())}</div>
+      </body></html>`);
+    w.document.close(); w.focus();
+    setTimeout(() => { try { w.print(); } catch (e) {} }, 300);
+  }
+
+  // Arma el contenido textual del "binder de vuelo" desde los datos vivos.
+  function buildBinder() {
+    const a = ATIS.dep, at = atisTimes(a), L = [];
+    const stName = { pending: "EN PROCESO", ready: "LISTA", delivered: "ENTREGADA", acknowledged: "WILCO/ACK" };
+    L.push("BINDER DE VUELO — SCEL / SCL");
+    L.push("DGAC CHILE · App ClearTO");
+    L.push("Generado: " + zClock(new Date()) + "  (" + new Date().toISOString().slice(0, 10) + ")");
+    L.push("");
+    L.push("AERODROMO SCEL (" + SCEL.name + ") — " + SCEL.condition);
+    L.push("  LDG RWY " + SCEL.landingRwy + " " + SCEL.landingProc + " · DEP RWY " + SCEL.depRwy + " " + SCEL.depProc);
+    L.push("  WIND " + SCEL.wind + SCEL.windUnit + " · QNH " + SCEL.qnh + " · TEMP " + SCEL.temp + " · TL " + SCEL.transitionLevel);
+    L.push("");
+    L.push("== D-ATIS SCEL DEP · INFO " + a.word + " " + zCompact(at.issued) + " ==");
+    atisRaw(a, at).split("\n").forEach(l => L.push("  " + l));
+    L.push("");
+    L.push("== AUTORIZACIONES PDC ==");
+    FLIGHTS.forEach(f => {
+      const t = pdcTimes(f.clearance);
+      L.push("");
+      L.push("- " + f.callsign + " (" + f.reg + " " + f.type + ") " + f.origin + ">" + f.dest + "  [" + (stName[f.stripState] || f.stripState) + "]");
+      L.push("  EOBT " + f.eobt + " · GATE " + f.gate + " · EXP " + zClock(t.expires));
+      if (f.stripState !== "pending") pdcRaw(f, t).split("\n").forEach(l => L.push("    " + l));
+      else L.push("    (autorización aún no emitida)");
+    });
+    L.push("");
+    L.push("== NOTAM " + NOTAM.id + " (" + NOTAM.scope + ") — " + NOTAM.status + " ==");
+    L.push("  " + NOTAM.text);
+    L.push("  VALID " + NOTAM.valid + " · " + NOTAM.src);
+    return L;
+  }
+
+  // Exporta el historial/binder a PDF con jsPDF (vendorizado, offline).
+  function exportBinderPdf() {
+    const lines = buildBinder();
+    const JsPDF = window.jspdf && window.jspdf.jsPDF;
+    if (!JsPDF) { toast("Abriendo versión imprimible del binder", "print"); return printTelegram(lines.join("\n"), "BINDER DE VUELO SCEL"); }
+    try {
+      const doc = new JsPDF({ unit: "pt", format: "a4" });
+      const margin = 40, top = 58, lh = 13;
+      const maxW = doc.internal.pageSize.getWidth() - margin * 2;
+      const pageH = doc.internal.pageSize.getHeight();
+      doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(11, 43, 92);
+      doc.text("ClearTO — BINDER DE VUELO", margin, 34);
+      doc.setDrawColor(5, 150, 105); doc.setLineWidth(1.5); doc.line(margin, 42, margin + maxW, 42);
+      doc.setFont("courier", "normal"); doc.setFontSize(9); doc.setTextColor(30, 41, 59);
+      let y = top;
+      lines.forEach(line => {
+        doc.splitTextToSize(line || " ", maxW).forEach(w => {
+          if (y > pageH - margin) { doc.addPage(); y = top; }
+          doc.text(w, margin, y); y += lh;
+        });
+      });
+      doc.save("binder-SCEL-" + zCompact(new Date()) + ".pdf");
+      toast("PDF del binder generado", "picture_as_pdf");
+    } catch (e) {
+      toast("No se pudo generar el PDF; abriendo versión imprimible", "error");
+      printTelegram(lines.join("\n"), "BINDER DE VUELO SCEL");
+    }
   }
 
   // ============================================================
@@ -680,6 +898,11 @@
       navigator.clipboard?.writeText(txt).then(() => toast("Copiado al portapapeles", "content_copy")).catch(() => toast("Copiado", "content_copy"));
     });
 
+    // Imprimir telegrama (antes placeholder): abre una hoja monoespaciada limpia.
+    document.querySelectorAll("[data-print]").forEach(b => b.onclick = () => {
+      printTelegram(decodeURIComponent(b.dataset.print), b.dataset.printTitle || "TELEGRAMA");
+    });
+
     // Dashboard -> solicitar
     const dashReq = $("#dashRequest");
     if (dashReq) dashReq.onclick = () => {
@@ -700,13 +923,24 @@
     if (go) go.onclick = doSearch;
     const inp = $("#searchCallsign");
     if (inp) inp.onkeydown = e => { if (e.key === "Enter") doSearch(); };
+    document.querySelectorAll("#searchClear").forEach(b => b.onclick = () => { searchQuery = ""; render(); });
     function doSearch() {
       const cs = ($("#searchCallsign")?.value || "").trim().toUpperCase();
-      if (!cs) return toast("Ingresa un indicativo", "flight");
-      const f = FLIGHTS.find(x => x.callsign === cs);
-      if (!f) return toast("Vuelo no encontrado", "error");
-      if (f.stripState === "pending") return toast("Autorización aún no está lista para " + cs, "hourglass_top");
-      selectedFlight = cs; render();
+      if (!cs) { searchQuery = ""; render(); return toast("Ingresa un indicativo", "flight"); }
+      // 1) Coincidencia exacta.
+      const exact = FLIGHTS.find(x => x.callsign === cs);
+      if (exact) {
+        if (exact.stripState === "pending") { searchQuery = cs; render(); return toast("Autorización aún no está lista para " + cs, "hourglass_top"); }
+        selectedFlight = cs; searchQuery = ""; return render();
+      }
+      // 2) Coincidencias parciales.
+      const partial = FLIGHTS.filter(x => x.callsign.includes(cs));
+      if (partial.length === 1 && selectable(partial[0].stripState)) {
+        selectedFlight = partial[0].callsign; searchQuery = ""; return render();
+      }
+      searchQuery = cs; render();
+      if (!partial.length) toast(`Sin coincidencias para ${cs}`, "search_off");
+      else toast(`${partial.length} coincidencia(s) para "${cs}"`, "search");
     }
 
     // Filas de vuelo
@@ -733,15 +967,40 @@
     if (wilco) wilco.onclick = () => {
       const f = FLIGHTS.find(x => x.callsign === selectedFlight);
       if (!f) return;
+      // Revalida expiración en el momento de colacionar.
+      if (expiryStatus(pdcTimes(f.clearance).expires).key === "expired") {
+        toast("Clearance expirada: solicita una nueva", "error");
+        return render();
+      }
       // Simula el intercambio: primero 'delivered' (piloto la tiene), luego ack tras colacionar
       setStripState(f.callsign, "acknowledged");
       toast("Readback digital enviado · franja: RECIBIDA", "done_all");
       render();
     };
+
+    // Solicitar nueva autorización (clearance expirada) — maqueta
+    const reqNew = $("#reqNewBtn");
+    if (reqNew) reqNew.onclick = () => toast("Solicitud de nueva autorización enviada al controlador", "send");
+
+    // Exportar historial a PDF (binder de vuelo)
+    const pdfBtn = $("#exportPdf");
+    if (pdfBtn) pdfBtn.onclick = exportBinderPdf;
   }
 
-  // Reloj Z en vivo
-  setInterval(() => { const c = $("#clockZ"); if (c) c.textContent = nowZ(); }, 15000);
+  // ---- Refresco de tiempos en vivo (reloj, edad de telegramas, expiración) ----
+  function refreshLive() {
+    const clk = $("#clockZ"); if (clk) clk.textContent = nowZ();
+    const sync = $("#stripSync"); if (sync) sync.textContent = "SYNC " + nowZ();
+    const aa = $("#atisAge"); if (aa) aa.textContent = humanAge(agoMin(T0));
+    const pa = $("#pdcAge"); if (pa) pa.textContent = humanAge(agoMin(T0));
+    // Chip de expiración en el detalle de clearance
+    const chip = $("#expChip");
+    if (chip && selectedFlight) {
+      const f = FLIGHTS.find(x => x.callsign === selectedFlight);
+      if (f) chip.outerHTML = expChip(expiryStatus(pdcTimes(f.clearance).expires));
+    }
+  }
+  setInterval(refreshLive, 15000);
 
   render();
 

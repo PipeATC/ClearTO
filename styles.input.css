@@ -1,0 +1,6 @@
+/* Entrada de Tailwind para ClearTO. Compilar a styles.css con:
+ *   npm run build:css
+ * (ver tailwind.config.js y package.json). */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
