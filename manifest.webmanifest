@@ -1,0 +1,19 @@
+{
+  "name": "ClearTO — D-ATIS & D-Clearance SCEL",
+  "short_name": "ClearTO",
+  "description": "Terminal digital D-ATIS y autorización de salida (D-Clearance / PDC) para SCEL — DGAC Chile.",
+  "id": "/",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f7fb",
+  "theme_color": "#0b2b5c",
+  "lang": "es-CL",
+  "categories": ["utilities", "travel", "productivity"],
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
