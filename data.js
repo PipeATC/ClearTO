@@ -32,29 +32,22 @@ window.SCEL = {
 };
 
 // D-ATIS (salida y llegada)
+// Los tiempos ya NO son fijos: se derivan del reloj Z vivo con estos offsets
+// (issuedAgoMin = emitida hace N min; validForMin = vigencia en min). El
+// telegrama crudo se arma en app.js con esos tiempos para que sea consistente.
 window.ATIS = {
   dep: {
-    letter: "R", word: "ROMEO", time: "1530Z", valid: "1630Z",
+    letter: "R", word: "ROMEO",
+    issuedAgoMin: 6, validForMin: 60,
     wind: "190/11", windVrb: "160°-220°",
     qnh: "1015", qnhInHg: "29.97",
     vis: "10 KM+", visNote: "CAVOK", clouds: "FEW 4000 · BKN 10000",
     temp: "19", dew: "08", spread: "11", rh: "52",
-    depRwy: "17R", arrRwy: "17L",
-    raw: [
-      "SCEL ATIS DEP R 1530Z",
-      "RWY 17R EN USO",
-      "VIENTO 190/11KT VRB 160-220",
-      "VIS 10KM FEW040 BKN100",
-      "19/08 Q1015 NOSIG",
-      "APCH ILS Y 17L",
-      "EXP SALIDA FLW SID SEGUN PLAN",
-      "CONTACTO SANTIAGO CLNC 121.1 TRAS COLACION",
-      "--- TRANSMISION DIRECTA VIA APP CLEARTO ---",
-      "DGAC SCEL ---"
-    ].join("\n")
+    depRwy: "17R", arrRwy: "17L"
   },
   arr: {
-    letter: "Q", word: "QUEBEC", time: "1430Z", valid: "1530Z",
+    letter: "Q", word: "QUEBEC",
+    issuedAgoMin: 66, validForMin: 60,
     superseded: true
   }
 };
@@ -99,14 +92,7 @@ window.FLIGHTS = [
       squawkNote: "XPDR MODE C/S",
       freqDelivery: "121.100",
       freqGround: "121.900",
-      expires: "23:30Z",
-      pdcText: [
-        "PDC SCEL 1540Z LAN502",
-        "CLRD TO SPJC VIA ALKUM4A",
-        "DEP RWY 17R CLB FL120",
-        "SQUAWK 4216",
-        "ENLACE DIRECTO APP CLEARTO DGAC CHILE"
-      ].join("\n")
+      issuedAgoMin: 4, validForMin: 90
     }
   },
   {
@@ -131,14 +117,7 @@ window.FLIGHTS = [
       squawkNote: "XPDR MODE C/S",
       freqDelivery: "121.100",
       freqGround: "121.900",
-      expires: "23:55Z",
-      pdcText: [
-        "PDC SCEL 1600Z LAN501",
-        "CLRD TO SCFA VIA EROKA3B",
-        "DEP RWY 17R CLB FL170",
-        "SQUAWK 2105",
-        "ENLACE DIRECTO APP CLEARTO DGAC CHILE"
-      ].join("\n")
+      issuedAgoMin: 1, validForMin: 90
     }
   },
   {
@@ -163,14 +142,7 @@ window.FLIGHTS = [
       squawkNote: "XPDR MODE C/S",
       freqDelivery: "121.100",
       freqGround: "121.900",
-      expires: "22:15Z",
-      pdcText: [
-        "PDC SCEL 1315Z SKU301",
-        "CLRD TO SCFA VIA EROKA3B",
-        "DEP RWY 17R CLB FL170",
-        "SQUAWK 2105",
-        "ENLACE DIRECTO APP CLEARTO DGAC CHILE"
-      ].join("\n")
+      issuedAgoMin: 150, validForMin: 60
     }
   }
 ];

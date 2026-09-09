@@ -1,0 +1,16 @@
+{
+  "name": "clearto-scel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ClearTO — D-ATIS & D-Clearance (PDC) SCEL · DGAC Chile. Maqueta PWA sin backend.",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i styles.input.css -o styles.css --minify",
+    "watch:css": "tailwindcss -c tailwind.config.js -i styles.input.css -o styles.css --watch",
+    "start": "python3 -m http.server 8000"
+  },
+  "devDependencies": {
+    "@tailwindcss/container-queries": "0.1.1",
+    "@tailwindcss/forms": "0.5.9",
+    "tailwindcss": "3.4.17"
+  }
+}

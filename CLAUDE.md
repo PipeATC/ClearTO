@@ -65,8 +65,13 @@ real** — ver backlog §7.
 Deliberadamente **sin build step**, para que GitHub Pages sirva los archivos tal
 cual y Felipe pueda iterar rápido.
 
-- **HTML + Tailwind (CDN) + JavaScript vanilla.** SPA de una sola vista con
-  render por reemplazo de `innerHTML`. Sin framework, sin bundler, sin npm.
+- **HTML + Tailwind (compilado local) + JavaScript vanilla.** SPA de una sola
+  vista con render por reemplazo de `innerHTML`. Sin framework, sin bundler.
+  Tailwind ya **no** se sirve por CDN: `styles.css` se genera con la CLI de
+  Tailwind (`npm run build:css`) escaneando el HTML/JS. El navegador solo carga
+  ese CSS estático — cero JS de Tailwind en runtime, arranque offline y sin el
+  warning de producción del CDN. npm se usa **solo** en build/dev; el runtime
+  sigue siendo estático.
 - **PWA**: `manifest.webmanifest` + `sw.js` (service worker cache-first del app
   shell) → instalable y con arranque offline básico.
 - Fuentes: **Public Sans** (UI) + **JetBrains Mono** (datos/telegramas).
@@ -75,10 +80,13 @@ cual y Felipe pueda iterar rápido.
 ### Archivos
 
 ```
-index.html   App shell + config de Tailwind (tokens de color DGAC) + carga de scripts
+index.html   App shell + carga de styles.css (Tailwind compilado) + scripts
 data.js      TODOS los datos simulados (aeródromo, ATIS, vuelos/franjas, NOTAM). Un solo lugar.
-app.js       Lógica: navegación por pestañas, render de cada vista, ciclo de clearance, toasts
-sw.js        Service worker PWA (cache-first, deja pasar CDNs externos)
+app.js       Lógica: navegación, render, ciclo de clearance, tiempos vivos, PDF, toasts
+sw.js        Service worker PWA (cache-first; cachea styles.css y jsPDF; deja pasar fuentes CDN)
+styles.css   Tailwind COMPILADO (se versiona). Regenerar con `npm run build:css`.
+styles.input.css / tailwind.config.js / package.json   Fuente y config del build de CSS
+vendor/      jsPDF vendorizado (jspdf.umd.min.js) para el export a PDF offline
 manifest.webmanifest   Metadatos PWA
 icons/       icon-192.png, icon-512.png, icon-maskable-512.png (icono radar, opción 1)
 design/      Los 3 SVG de icono a elegir + el ZIP de diseño Stitch original de referencia
@@ -96,10 +104,12 @@ engancha todos los eventos (delegación simple por `data-*`).
 - Cards: `bg-white border border-slate-200/90 rounded-xl shadow-sm`.
 - Datos numéricos y telegramas siempre en `font-mono`.
 
-> **Nota de entorno:** al probar en un sandbox con red restringida, el CDN de
-> Tailwind (`cdn.tailwindcss.com`) puede estar bloqueado y la app se ve sin
-> estilos. En un navegador normal / GitHub Pages carga bien. Si quieres eliminar
-> esa dependencia de red, ver backlog §7 (Tailwind local).
+> **Nota de entorno:** los estilos ya no dependen de red (Tailwind es local en
+> `styles.css`). Las **fuentes** (Public Sans, JetBrains Mono, Material Symbols)
+> siguen viniendo del CDN de Google Fonts; en un sandbox con red restringida
+> pueden bloquearse y los iconos se ven como texto (p. ej. `verified`). En un
+> navegador normal / GitHub Pages cargan bien y offline caen a la fuente del
+> sistema. Vendorizar las fuentes localmente queda como mejora opcional (§7).
 
 ---
 
@@ -139,21 +149,27 @@ Para cambiar el icono default: edita `icons/` regenerando PNG desde otro SVG
 
 ## 6. Deploy a GitHub Pages
 
-La app es 100% estática; sirve desde la raíz del repo.
+La app es 100% estática en runtime; sirve desde la raíz del repo. `styles.css`
+(Tailwind compilado) y `vendor/jspdf.umd.min.js` se versionan, así que **Pages no
+necesita build** — solo servir los archivos.
 
 ```bash
-git init && git add . && git commit -m "ClearTO maqueta inicial"
-git branch -M main
-git remote add origin git@github.com:<usuario>/clearto-scel.git
-git push -u origin main
 # GitHub → Settings → Pages → Source: Deploy from a branch → main / (root)
 ```
 
-Rutas ya **relativas** (`./`, `icons/…`) para que funcione bajo
+Si editas el HTML/JS y agregas clases nuevas de Tailwind, **regenera el CSS antes
+de commitear**:
+
+```bash
+npm install        # solo la primera vez (dev-only; no va al runtime)
+npm run build:css  # regenera styles.css escaneando index.html/app.js/data.js
+```
+
+Rutas ya **relativas** (`./`, `icons/…`, `vendor/…`) para que funcione bajo
 `https://<usuario>.github.io/clearto-scel/`. Si el service worker se comporta raro
 en un subpath, confirma que `scope` y `start_url` del manifest siguen relativos.
-Tras cambios, recuerda que el SW cachea: bump de `CACHE` en `sw.js` (`clearto-v1`
-→ `v2`) para forzar actualización.
+Tras cambios, recuerda que el SW cachea: bump de `CACHE` en `sw.js` (hoy
+`clearto-v2` → `v3`) para forzar actualización.
 
 ---
 
@@ -170,19 +186,30 @@ Tras cambios, recuerda que el SW cachea: bump de `CACHE` en `sw.js` (`clearto-v1
 - Implementar el estado `delivered` real (piloto obtuvo pero no colacionó) para que
   la franja muestre "entregada, pendiente readback".
 
-**P1 — Robustez de la maqueta:**
-- Timestamps reales en PDC/ATIS en vez de fijos (hay reloj Z vivo; extender a los
-  telegramas).
-- Validación de expiración de clearance (`EXP: hh:mmZ`) con aviso visual.
-- Estados de error/vacío del buscador más ricos (parcial match, formato ICAO).
+**P1 — Robustez de la maqueta:** ✅ HECHO (esta iteración)
+- ✅ Timestamps vivos en PDC/ATIS: los tiempos se derivan del reloj Z real vía
+  offsets en `data.js` (`issuedAgoMin` / `validForMin`); los telegramas se arman
+  en `app.js` (`atisRaw` / `pdcRaw`) con la hora de emisión viva y muestran la
+  edad de recepción ("RECIBIDO hh:mmZ · hace N min"), refrescada sola.
+- ✅ Validación de expiración de clearance con aviso visual: chip VIGENTE /
+  POR EXPIRAR (ámbar, <10 min) / EXPIRADA (rojo). Al expirar, el WILCO se
+  deshabilita y se ofrece "solicitar nueva autorización"; se revalida al colacionar.
+- ✅ Estados de error/vacío del buscador: match exacto + parcial (`includes`),
+  chip de resultados con "limpiar", estado vacío enriquecido y aviso de formato
+  de indicativo no reconocido (regex `CALLSIGN_RE`).
 
 **P2 — Pulido / features:**
-- Reemplazar Tailwind CDN por CSS compilado local (elimina dependencia de red,
-  mejora offline y quita el warning de producción del CDN).
-- Export real a PDF del historial (jsPDF) para el "binder de vuelo".
-- Copiar/imprimir telegrama: la impresión hoy es placeholder.
-- i18n opcional EN/ES (Felipe además es instructor de inglés aeronáutico).
-- Tests: el flujo del ciclo se validó con Playwright; formalizar un smoke test.
+- ✅ Tailwind CDN → CSS compilado local (`styles.css`, build con `npm run build:css`).
+- ✅ Export real a PDF del historial con **jsPDF vendorizado** (`vendor/`,
+  offline). `buildBinder()` arma el binder desde datos vivos; fallback a hoja
+  imprimible si jsPDF no cargara.
+- ✅ Imprimir telegrama (D-ATIS): antes placeholder, ahora abre hoja monoespaciada
+  y dispara `print()` (`printTelegram`).
+- ⏳ i18n opcional EN/ES (Felipe además es instructor de inglés aeronáutico).
+- ⏳ Formalizar el smoke test de Playwright en el repo (hoy se corre manual;
+  cubre: render, ATIS vivo, búsqueda parcial/vacía, ciclo WILCO, export PDF).
+- ⏳ Opcional: vendorizar las fuentes (Public Sans / JetBrains Mono / Material
+  Symbols) para eliminar la última dependencia de red y offline 100%.
 
 **Notas de dominio (respetar):**
 - No inventar procedimientos: SID, mínimos, frecuencias y RWY deben venir de datos
@@ -196,8 +223,15 @@ Tras cambios, recuerda que el SW cachea: bump de `CACHE` en `sw.js` (`clearto-v1
 
 ```bash
 # desde la carpeta del proyecto
-python3 -m http.server 8000
+python3 -m http.server 8000    # o: npm start
 # abrir http://localhost:8000  (usar DevTools → Toggle device toolbar, móvil)
+```
+
+Si vas a tocar el diseño, corre el watcher de CSS en paralelo:
+
+```bash
+npm install        # primera vez
+npm run watch:css  # recompila styles.css al guardar
 ```
 
 Flujo de demo: D-Clearance → en el simulador marca **LAN501** como "lista" →
