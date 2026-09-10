@@ -28,20 +28,28 @@ fondo; no simplifiques la terminología ATC.
 
 ## 2. El ciclo de autorización (lo más importante)
 
-La app es la mitad "piloto" de un sistema de dos dispositivos. La otra mitad es
-una **franja de progreso de vuelo (Flight Progress Strip)** que usa el
-**controlador** y que **se entregará más adelante** (aún no existe en este repo).
+Sistema de **dos dispositivos (dos tablets en la misma red)**, ambos servidos
+por `server.js`:
 
-Flujo objetivo de extremo a extremo:
+- **Piloto** → `index.html` / `app.js` (esta app).
+- **Controlador** → `atc.html` / `atc.js` (la **franja electrónica**, ya
+  implementada en este repo).
 
-1. El **controlador** completa la autorización en su franja y coloca un **check
-   "lista para ser entregada"**.
-2. El **piloto** abre ClearTO → pestaña **D-Clearance** → **busca su vuelo** por
-   indicativo → **obtiene la autorización** (PDC).
-3. El piloto pulsa **ACEPTAR Y COLACIONAR (WILCO)** → se envía un **readback
-   digital**.
-4. El ciclo se cierra: la **franja del controlador indica "autorización
-   recibida"**.
+Flujo de extremo a extremo (funciona en vivo entre las dos tablets):
+
+1. El **controlador** ve sus franjas y, cuando completa la autorización, pulsa
+   **MARCAR LISTA** (check "lista para entregar") → `stripState: ready`.
+2. El **piloto** abre D-Clearance → **busca su indicativo** → **ASIGNAR ESTE
+   VUELO**. Si aún está `pending` ve "en espera"; al quedar `ready` recibe la
+   **autorización en orden CRAFT** (límite · ruta · nivel · pista · SID ·
+   frecuencia · SSR).
+3. El piloto pulsa **ACEPTAR Y COLACIONAR (WILCO)** → readback digital.
+4. El ciclo se cierra: la **franja del controlador muestra "AUTORIZACIÓN
+   RECIBIDA"** (`acknowledged`).
+
+El controlador también puede **editar** la autorización inline (nivel, SSR,
+ruta, SID, frecuencia…) y **RETIRAR** una entrega. Todo se sincroniza al
+instante por WebSocket (ver §3.1).
 
 ### Modelo de estados de la franja (`stripState` en `data.js`)
 
@@ -52,11 +60,12 @@ Flujo objetivo de extremo a extremo:
 | `delivered`     | Piloto ya la obtuvo, aún sin colacionar            | (transitorio; reservado para la integración real) |
 | `acknowledged`  | Readback digital recibido → ciclo cerrado          | "RECIBIDA · WILCO", banner CICLO CERRADO |
 
-En la maqueta, el paso 1 se simula con el **panel "Simulador de controlador"** al
-final de la pestaña D-Clearance (marca cualquier vuelo `pending` como `ready`). El
-estado se persiste en `localStorage` (`clearto_strip_state_v1`) para que el flujo
-se sienta real entre recargas. **Ese simulador desaparece cuando exista la franja
-real** — ver backlog §7.
+El **"Simulador de controlador"** de la maqueta original **ya no existe**: fue
+reemplazado por la **franja electrónica real** (`atc.html`/`atc.js`), que es el
+segundo dispositivo. El paso 1 lo hace el controlador de verdad con **MARCAR
+LISTA**. Sin servidor (GitHub Pages), `netlink.js` cae a un modo **offline** en
+un solo dispositivo persistido en `localStorage` (`clearto_strip_state_v1`), y
+la app del piloto se sigue pudiendo demostrar sola.
 
 ---
 
@@ -80,14 +89,22 @@ cual y Felipe pueda iterar rápido.
 ### Archivos
 
 ```
-index.html   App shell + carga de styles.css (Tailwind compilado) + scripts
-data.js      TODOS los datos simulados (aeródromo, ATIS, vuelos/franjas, NOTAM). Un solo lugar.
-app.js       Lógica: navegación, render, ciclo de clearance, tiempos vivos, PDF, toasts
-sw.js        Service worker PWA (cache-first; cachea styles.css y jsPDF; deja pasar fuentes CDN)
+index.html   App del PILOTO: shell + carga de styles.css + netlink + app.js
+app.js       Lógica del piloto: navegación, Tablero, D-ATIS, D-Clearance (buscar→asignar→
+             autorización CRAFT→WILCO), Historial, tiempos vivos, PDF, toasts
+atc.html     App del CONTROLADOR: shell (fija window.CLEARTO_ROLE="atc") + atc.js
+atc.js       Franja electrónica: tablero de franjas, MARCAR LISTA / RETIRAR / edición
+             inline de la autorización, readback (WILCO) en vivo
+netlink.js   Sincronización piloto⇄controlador (WebSocket al server LAN) con FALLBACK
+             offline por localStorage (para la demo estática en GitHub Pages)
+server.js    Servidor LAN (Node puro, SIN dependencias): sirve ambas apps + WebSocket
+             nativo (/ws) + estado autoritativo del ciclo por indicativo (.clearto-state.json)
+data.js      Datos: aeródromo SCEL, ATIS, VUELOS/FRANJAS (de la imagen real), NOTAM
+sw.js        Service worker PWA (cache-first; cachea styles.css, netlink.js y jsPDF)
 styles.css   Tailwind COMPILADO (se versiona). Regenerar con `npm run build:css`.
 styles.input.css / tailwind.config.js / package.json   Fuente y config del build de CSS
 vendor/      jsPDF vendorizado (jspdf.umd.min.js) para el export a PDF offline
-manifest.webmanifest   Metadatos PWA
+manifest.webmanifest   Metadatos PWA (piloto)
 icons/       icon-192.png, icon-512.png, icon-maskable-512.png (icono radar, opción 1)
 design/      Los 3 SVG de icono a elegir + el ZIP de diseño Stitch original de referencia
 ```
@@ -110,6 +127,36 @@ engancha todos los eventos (delegación simple por `data-*`).
 > pueden bloquearse y los iconos se ven como texto (p. ej. `verified`). En un
 > navegador normal / GitHub Pages cargan bien y offline caen a la fuente del
 > sistema. Vendorizar las fuentes localmente queda como mejora opcional (§7).
+
+### 3.1 Red: las dos tablets en la misma wifi
+
+`server.js` es un **servidor LAN en Node puro, sin dependencias** (implementa el
+WebSocket con módulos nativos), pensado para correr en un notebook/mini-PC de la
+misma red:
+
+```bash
+node server.js            # puerto 8080 (o: PORT=9000 node server.js)
+# imprime las URLs con la IP de la LAN. En las tablets:
+#   Piloto      →  http://<ip>:8080/
+#   Controlador →  http://<ip>:8080/atc
+```
+
+- **Transporte:** WebSocket en `/ws`. El servidor es la **fuente de verdad** del
+  ciclo por indicativo y retransmite cada cambio a todas las tablets.
+- **Contrato mínimo** (deltas por vuelo): `{ stripState, clearance, assignedTo,
+  updatedAt }`. El piloto lee `clearance` y escribe `assigned`/`acknowledged`; el
+  controlador escribe `ready`/`clear`/`recall`. Se persiste en
+  `.clearto-state.json` (gitignored) para sobrevivir reinicios.
+- **Mensajes cliente→servidor:** `assign` (piloto toma el vuelo), `ready`/
+  `unready` (controlador entrega/retira), `clear` (edita autorización), `wilco`
+  (readback), `recall`. Servidor→clientes: `snapshot` (estado completo).
+- **`netlink.js`** encapsula todo esto (`Net.assign/ready/clear/wilco/recall`) y,
+  si no hay servidor, cae a **offline/localStorage** (misma API) para GitHub
+  Pages. El rol se fija con `?role=atc` o `window.CLEARTO_ROLE="atc"`.
+
+Verificado con Playwright (dos contextos = dos tablets): asignar → MARCAR LISTA →
+el piloto recibe la CRAFT en vivo → WILCO → la franja muestra RECIBIDA; edición
+inline del controlador se sincroniza; y el modo offline persiste tras recarga.
 
 ---
 
@@ -175,16 +222,24 @@ Tras cambios, recuerda que el SW cachea: bump de `CACHE` en `sw.js` (hoy
 
 ## 7. Backlog priorizado (próximos pasos)
 
-**P0 — Integración con la franja de progreso de vuelo (cuando llegue el diseño):**
-- Reemplazar el "Simulador de controlador" por un transporte real entre dispositivos.
-  Opciones sin backend pesado: WebSocket a un broker simple, WebRTC datachannel, o
-  un servicio realtime (p. ej. Firebase RTDB / Supabase realtime) solo para el
-  campo `stripState` por indicativo.
-- Contrato de sincronización sugerido (mantenerlo mínimo): por vuelo,
-  `{ callsign, stripState, clearance, updatedAt }`. El piloto solo lee `clearance`
-  y escribe `acknowledged`; el controlador escribe todo lo demás.
-- Implementar el estado `delivered` real (piloto obtuvo pero no colacionó) para que
-  la franja muestre "entregada, pendiente readback".
+**P0 — Integración con la franja de progreso de vuelo:** ✅ MAYORMENTE HECHO
+- ✅ Franja electrónica del controlador (`atc.html`/`atc.js`) basada en la imagen
+  real (LXP376, JAT044, LAN740, LAN102, LAE2541, LAP1325; RWY 17R; rutas/SID/
+  niveles/freq de la franja).
+- ✅ Transporte real entre las dos tablets: WebSocket a `server.js` (Node puro,
+  sin dependencias) en la misma LAN, con contrato mínimo por indicativo y
+  fallback offline. Ver §3.1.
+- ✅ Autorización del piloto en orden **CRAFT** y D-Clearance simplificado
+  (buscar + ASIGNAR, sin estado de otros vuelos).
+- ⏳ **Datos a confirmar con Felipe** (marcados `TODO` en `data.js`): SSR reales
+  del resto de vuelos (solo LAE2541=5370 venía en la foto; el resto son
+  `ssrSim`), y el sentido de "280 RCLE" (lo modelé como nivel inicial + nota).
+- ⏳ **Tablero con eAIP:** poblar `SCEL` en `data.js` con datos reales del eAIP
+  (pistas, TL, elevación, frecuencias, cautions) cuando Felipe lo comparta.
+- ⏳ Estado `delivered` explícito (piloto abrió pero no colacionó): el server ya
+  lo soporta; falta que el piloto emita `delivered` al abrir la autorización.
+- ⏳ Endurecer el server para producción (varios clientes, TLS/wss opcional en LAN,
+  autenticación básica del rol controlador).
 
 **P1 — Robustez de la maqueta:** ✅ HECHO (esta iteración)
 - ✅ Timestamps vivos en PDC/ATIS: los tiempos se derivan del reloj Z real vía
@@ -221,19 +276,24 @@ Tras cambios, recuerda que el SW cachea: bump de `CACHE` en `sw.js` (hoy
 
 ## 8. Cómo probar localmente
 
-```bash
-# desde la carpeta del proyecto
-python3 -m http.server 8000    # o: npm start
-# abrir http://localhost:8000  (usar DevTools → Toggle device toolbar, móvil)
-```
-
-Si vas a tocar el diseño, corre el watcher de CSS en paralelo:
+**Dos tablets (piloto + controlador) en la misma red — recomendado:**
 
 ```bash
-npm install        # primera vez
-npm run watch:css  # recompila styles.css al guardar
+npm start          # = node server.js  (imprime las URLs con la IP de la LAN)
+# Controlador →  http://<ip>:8080/atc     Piloto →  http://<ip>:8080/
 ```
 
-Flujo de demo: D-Clearance → en el simulador marca **LAN501** como "lista" →
-búscalo → obtén la clearance → **WILCO** → verás "CICLO CERRADO". LAN502 ya viene
-`ready` y SKU301 ya viene `acknowledged` (para poblar el historial/estados).
+Demo del ciclo en vivo: en `/atc` pulsa **MARCAR LISTA** en un vuelo `pending`
+(p. ej. **LXP376**) → en el piloto busca ese indicativo → **ASIGNAR ESTE VUELO**
+→ recibe la **autorización CRAFT** → **WILCO** → la franja del controlador muestra
+**AUTORIZACIÓN RECIBIDA**. LAN740/LAN102 ya vienen `ready` (asignar y ver CRAFT al
+tiro) y LAE2541 ya viene `acknowledged` (para el historial).
+
+**Solo la app del piloto (estático, sin servidor):**
+
+```bash
+npm run serve:static   # python3 -m http.server 8000
+# http://localhost:8000  → DevTools → vista móvil (modo offline/localStorage)
+```
+
+Si vas a tocar el diseño, corre el watcher de CSS en paralelo (`npm run watch:css`).

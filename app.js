@@ -5,41 +5,18 @@
 (function () {
   "use strict";
 
-  const STORE_KEY = "clearto_strip_state_v1";
   const $ = (sel, root = document) => root.querySelector(sel);
 
-  // ---- Estado del ciclo de autorización, persistido localmente ----
-  // Simula lo que en producción sincronizaría la franja de progreso.
-  function loadState() {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
-    catch { return {}; }
-  }
-  function saveState(s) {
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch {}
-  }
-  const overrides = loadState();
-
-  // Aplica overrides guardados sobre los datos base
-  FLIGHTS.forEach(f => {
-    if (overrides[f.callsign]) f.stripState = overrides[f.callsign];
-  });
-
-  function setStripState(callsign, state) {
-    const f = FLIGHTS.find(x => x.callsign === callsign);
-    if (!f) return;
-    f.stripState = state;
-    overrides[callsign] = state;
-    saveState(overrides);
-  }
+  // El ciclo de autorización lo sincroniza NetLink (server LAN) con fallback
+  // offline por localStorage. Aquí solo leemos FLIGHTS y disparamos acciones.
 
   // ---- Navegación por pestañas ----
   let activeTab = "dashboard";
-  let selectedFlight = null; // callsign en detalle de D-Clearance
-  let searchQuery = "";      // filtro activo del buscador de vuelos
+  let selectedFlight = null; // callsign asignado (vuelo del piloto)
+  let searchQuery = "";      // texto del buscador de vuelos
 
   // Formato típico de indicativo: 2-3 letras + 1-4 dígitos (+ sufijo opcional).
   const CALLSIGN_RE = /^[A-Z]{2,3}\d{1,4}[A-Z]?$/;
-  const selectable = st => st === "ready" || st === "delivered" || st === "acknowledged";
 
   const app = $("#app");
 
@@ -87,14 +64,16 @@
     const issued = addMin(T0, -(c.issuedAgoMin || 0));
     return { issued, expires: addMin(issued, c.validForMin || 60) };
   }
-  // Telegrama PDC crudo, armado con el tiempo de emisión vivo.
+  // Telegrama PDC crudo (orden CRAFT), armado con el tiempo de emisión vivo.
   function pdcRaw(f, t) {
     const c = f.clearance;
     return [
       `PDC SCEL ${zCompact(t.issued)} ${f.callsign}`,
-      `CLRD TO ${f.dest} VIA ${c.sid.replace(/\s+/g, "")}`,
-      `DEP RWY ${c.depRwy} CLB ${c.climbAlt.replace(/\s+/g, "")}`,
-      `SQUAWK ${c.squawk}`,
+      `CLRD TO ${c.limit} VIA ${c.route}`,
+      `${c.level}${c.levelNote ? " " + c.levelNote : ""}`,
+      `DEP RWY ${c.rwy} SID ${c.sid}`,
+      `SQUAWK ${c.ssr}`,
+      `FREQ ${c.freq}`,
       "ENLACE DIRECTO APP CLEARTO DGAC CHILE"
     ].join("\n");
   }
@@ -178,16 +157,11 @@
 
   const dot = c => `<span class="w-2 h-2 rounded-full bg-${c}-500 inline-block shadow-sm"></span>`;
 
-  // Etiqueta de estado de la franja
-  function stripBadge(state) {
-    const map = {
-      pending:      ["EN PROCESO",  "bg-slate-100 text-slate-600 border-slate-200"],
-      ready:        ["LISTA · CLR", "bg-emerald-50 text-emerald-800 border-emerald-200"],
-      delivered:    ["ENTREGADA",   "bg-sky-50 text-sky-800 border-sky-200"],
-      acknowledged: ["WILCO / ACK", "bg-emerald-600 text-white border-emerald-600"]
-    };
-    const [txt, cls] = map[state] || map.pending;
-    return `<span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${cls}">${txt}</span>`;
+  // Indicador pequeño de estado del enlace LAN (piloto ⇄ controlador).
+  function connPill() {
+    const on = window.Net && Net.online;
+    return `<span class="inline-flex items-center gap-1 text-[10px] font-mono font-bold ${on ? "text-emerald-700" : "text-slate-400"}">
+      <span class="w-1.5 h-1.5 rounded-full ${on ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}"></span>${on ? "ENLACE LAN" : "OFFLINE"}</span>`;
   }
 
   // ============================================================
@@ -202,17 +176,15 @@
         <span class="text-[10px] text-slate-500 font-mono">${sub}</span>
       </div>`;
 
-    const link = l => `
-      <div class="flex items-center justify-between gap-2 px-3 py-2.5 bg-slate-50 border border-slate-200/70 rounded-lg">
-        <div class="flex items-center gap-2.5 min-w-0">
-          ${dot(l.dot)}
-          <div class="flex flex-col min-w-0">
-            <span class="text-[13px] font-bold text-navy truncate">${l.name}</span>
-            <span class="text-[11px] text-slate-500 font-mono truncate">${l.sub}</span>
-          </div>
-        </div>
-        <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-mono font-semibold border border-emerald-200 shrink-0">${l.status}</span>
-      </div>`;
+    // Indicador pequeño de conexión (dot + etiqueta).
+    const linkChip = l => {
+      const on = l.id === "net" ? (window.Net && Net.online) : true;
+      const c = on ? l.dot : "slate";
+      return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200/70">
+        <span class="w-1.5 h-1.5 rounded-full bg-${c}-500 ${on ? "animate-pulse" : ""}"></span>
+        <span class="text-[10px] font-mono font-semibold text-slate-600">${l.name}</span>
+      </span>`;
+    };
 
     const freq = (label, val) => `
       <div class="flex flex-col items-center p-2.5 rounded-lg bg-slate-50 border border-slate-200/70">
@@ -279,19 +251,11 @@
           </div>
         `)}
 
-        <!-- Enlaces de datos -->
-        ${card(`
-          <div class="p-4 space-y-2.5">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <span class="material-symbols-outlined text-sky-700 text-[20px]">sensors</span>
-                <span class="text-[16px] font-bold text-navy">ENLACES DE DATOS DGAC</span>
-              </div>
-              <span class="text-[10px] px-2 py-1 rounded bg-sky-50 text-sky-800 font-mono font-semibold border border-sky-200/60">DGAC CLOUD LINK</span>
-            </div>
-            ${LINKS.map(link).join("")}
-          </div>
-        `)}
+        <!-- Estado de conexiones (indicadores pequeños) -->
+        <div class="flex items-center justify-between px-1">
+          <span class="text-[11px] font-mono text-slate-500 tracking-wide">ESTADO DE ENLACES</span>
+          <div class="flex items-center gap-1.5">${LINKS.map(linkChip).join("")}</div>
+        </div>
 
         <!-- Acceso rápido a Departure Clearance -->
         ${card(`
@@ -306,13 +270,13 @@
                 <input id="dashCallsign" value="${mine.callsign}" class="w-full bg-transparent font-mono text-[16px] font-bold text-navy tracking-wider outline-none border-0 p-0" />
               </div>
               <div class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
-                <span class="text-[10px] text-slate-500 font-mono">GATE</span>
-                <span class="font-mono text-[16px] font-bold text-navy">${mine.gate}</span>
+                <span class="text-[10px] text-slate-500 font-mono">STAND</span>
+                <span class="font-mono text-[16px] font-bold text-navy">${mine.stand}</span>
               </div>
             </div>
             <button id="dashRequest" class="w-full bg-primary hover:bg-primary-dark active:scale-[0.99] transition text-white font-bold py-3.5 rounded-lg flex items-center justify-center gap-2 shadow-sm">
-              <span class="material-symbols-outlined text-[20px]">send</span>
-              <span class="tracking-wide">SOLICITAR CLEARANCE (PDC)</span>
+              <span class="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+              <span class="tracking-wide">ASIGNAR ESTE VUELO</span>
             </button>
           </div>
         `)}
@@ -467,186 +431,182 @@
     return viewClearanceDetail(selectedFlight);
   }
 
-  // -- Buscador de vuelo --
+  // -- Buscador de vuelo (piloto): buscar → ASIGNAR ESTE VUELO --
   function viewClearanceSearch() {
-    const row = f => {
-      const cd = f.stripState;
-      const clickable = (cd === "ready" || cd === "delivered" || cd === "acknowledged");
-      return `
-        <button data-flight="${f.callsign}" ${clickable ? "" : "disabled"} class="w-full text-left ${clickable ? "active:scale-[0.99]" : "opacity-60 cursor-not-allowed"} transition">
-          ${card(`
-            <div class="p-3.5 flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3 min-w-0">
-                <span class="material-symbols-outlined text-sky-700 text-[22px] shrink-0">flight_takeoff</span>
-                <div class="flex flex-col min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="text-[16px] font-mono font-bold text-navy tracking-wide">${f.callsign}</span>
-                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono border border-slate-200">${f.type} / ${f.wtc}</span>
-                  </div>
-                  <span class="text-[12px] text-slate-500 font-mono truncate">${f.origin} → ${f.dest} · ${f.destCity}</span>
-                </div>
-              </div>
-              <div class="flex flex-col items-end gap-1 shrink-0">
-                ${stripBadge(cd)}
-                <span class="text-[10px] text-slate-400 font-mono">GATE ${f.gate}</span>
-              </div>
-            </div>
-          `)}
-        </button>`;
-    };
-
     const q = searchQuery.trim().toUpperCase();
-    const list = q ? FLIGHTS.filter(f => f.callsign.includes(q)) : FLIGHTS;
+    const match = q ? Net.find(q) : null;
     const badFormat = q && !CALLSIGN_RE.test(q);
 
-    // Estado vacío enriquecido: sin coincidencias para la búsqueda actual.
-    const emptyState = `
+    // Tarjeta del vuelo encontrado + botón ASIGNAR ESTE VUELO.
+    const matchCard = match ? `
+      ${card(`
+        <div class="p-4 space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="material-symbols-outlined text-sky-700 text-[24px] shrink-0">flight_takeoff</span>
+              <div class="flex flex-col min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-[20px] font-mono font-bold text-navy tracking-wide">${match.callsign}</span>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono border border-slate-200">${match.type} / ${match.wtc}</span>
+                </div>
+                <span class="text-[12px] text-slate-500 font-mono truncate">${match.adep} → ${match.ades} · ${match.adesCity}</span>
+              </div>
+            </div>
+            <div class="flex flex-col items-end">
+              <span class="text-[10px] text-slate-400 font-mono">STAND / EOBT</span>
+              <span class="text-[13px] font-mono font-bold text-navy">${match.stand} · ${match.eobt}</span>
+            </div>
+          </div>
+          <button data-assign="${match.callsign}" class="w-full bg-primary hover:bg-primary-dark active:scale-[0.99] transition text-white font-bold py-3.5 rounded-lg flex items-center justify-center gap-2 shadow-sm">
+            <span class="material-symbols-outlined text-[20px]">assignment_turned_in</span>
+            <span class="tracking-wide">ASIGNAR ESTE VUELO</span>
+          </button>
+          <p class="text-center text-[11px] text-slate-400 font-mono">Al asignarlo recibirás la autorización cuando el controlador la marque lista.</p>
+        </div>
+      `)}` : "";
+
+    const emptyState = q && !match ? `
       <div class="w-full bg-white border border-slate-200/90 rounded-xl shadow-sm p-5 flex flex-col items-center text-center gap-2">
         <span class="material-symbols-outlined text-slate-300 text-[40px]">flight_land</span>
         <span class="text-[14px] font-bold text-navy">Sin coincidencias para <span class="font-mono">"${q}"</span></span>
         <p class="text-[12px] text-slate-500 leading-snug">${badFormat
-          ? "El formato no parece un indicativo. Suele ser 2–3 letras + número (p. ej. <b class='font-mono'>LAN502</b>, <b class='font-mono'>SKU301</b>)."
-          : "Ese vuelo no está en las franjas de salida SCEL. Revisa el indicativo o consulta las franjas activas."}</p>
+          ? "El formato no parece un indicativo. Suele ser 2–3 letras + número (p. ej. <b class='font-mono'>LAN102</b>, <b class='font-mono'>JAT044</b>)."
+          : "Ese vuelo no está en las franjas de salida SCEL. Verifica tu indicativo con el controlador."}</p>
         <button id="searchClear" class="mt-1 text-primary font-bold text-[13px] flex items-center gap-1">
-          <span class="material-symbols-outlined text-[18px]">list</span> Ver todas las franjas
+          <span class="material-symbols-outlined text-[18px]">close</span> Limpiar
         </button>
-      </div>`;
-
-    // Encabezado: modo búsqueda (con limpiar) o listado normal (con SYNC vivo).
-    const listHeader = q
-      ? `<div class="flex items-center justify-between px-1">
-           <span class="text-[11px] font-mono text-slate-500 tracking-wide">RESULTADOS · "${q}" <span class="text-slate-400">(${list.length})</span></span>
-           <button id="searchClear" class="text-[11px] font-mono text-primary font-bold flex items-center gap-1">
-             <span class="material-symbols-outlined text-[14px]">close</span> LIMPIAR
-           </button>
-         </div>`
-      : `<div class="flex items-center justify-between px-1">
-           <span class="text-[11px] font-mono text-slate-500 tracking-wide">FRANJAS DE SALIDA SCEL</span>
-           <span class="text-[11px] font-mono text-slate-400" id="stripSync">SYNC ${nowZ()}</span>
-         </div>`;
+      </div>` : "";
 
     return `
       <div class="flex flex-col w-full px-4 space-y-3 pt-3 select-none">
         ${card(`
           <div class="p-4 space-y-2.5">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-navy text-[20px]">search</span>
-              <span class="text-[15px] font-bold text-navy">Buscar mi vuelo</span>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="material-symbols-outlined text-navy text-[20px]">search</span>
+                <span class="text-[15px] font-bold text-navy">Buscar mi vuelo</span>
+              </div>
+              ${connPill()}
             </div>
-            <p class="text-[12px] text-slate-500 leading-snug">Ingresa tu indicativo para recibir la autorización de salida (PDC) cuando el controlador la marque lista en la franja de progreso.</p>
+            <p class="text-[12px] text-slate-500 leading-snug">Ingresa tu indicativo y presiona <b>ASIGNAR ESTE VUELO</b> para recibir la autorización de salida (PDC) por datalink.</p>
             <div class="flex items-center gap-2 bg-slate-50 border ${badFormat ? "border-amber-300" : "border-slate-200"} rounded-lg px-3 py-3">
               <span class="material-symbols-outlined ${badFormat ? "text-amber-500" : "text-slate-400"} text-[20px]">flight</span>
-              <input id="searchCallsign" value="${q}" placeholder="Ej. LAN502" class="w-full bg-transparent font-mono text-[16px] font-bold text-navy tracking-wider outline-none border-0 p-0 uppercase placeholder:font-normal placeholder:text-slate-300" />
+              <input id="searchCallsign" value="${q}" placeholder="Ej. LAN102" class="w-full bg-transparent font-mono text-[16px] font-bold text-navy tracking-wider outline-none border-0 p-0 uppercase placeholder:font-normal placeholder:text-slate-300" />
               ${q ? `<button id="searchClear" class="text-slate-400 flex items-center px-1"><span class="material-symbols-outlined text-[18px]">close</span></button>` : ""}
               <button id="searchGo" class="text-primary font-bold text-[13px] px-2">BUSCAR</button>
             </div>
-            ${badFormat ? `<p class="text-[11px] text-amber-700 font-mono flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">info</span> Formato de indicativo no reconocido (mostrando coincidencias parciales).</p>` : ""}
+            ${badFormat ? `<p class="text-[11px] text-amber-700 font-mono flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">info</span> Formato de indicativo no reconocido.</p>` : ""}
           </div>
         `)}
-
-        ${listHeader}
-        ${list.length ? list.map(row).join("") : emptyState}
-
-        <!-- Panel simulador de controlador (solo maqueta) -->
-        <div class="w-full bg-sky-50/60 border border-dashed border-sky-300 rounded-xl p-3.5 space-y-2">
-          <div class="flex items-center gap-2">
-            <span class="material-symbols-outlined text-sky-700 text-[18px]">construction</span>
-            <span class="text-[12px] font-bold text-sky-900 font-mono">SIMULADOR DE CONTROLADOR (MAQUETA)</span>
-          </div>
-          <p class="text-[11px] text-sky-800/80 leading-snug">Reemplaza la franja de progreso real. Marca una autorización como <b>lista para entregar</b> y aparecerá disponible para el piloto.</p>
-          <div class="flex flex-wrap gap-2">
-            ${FLIGHTS.map(f => `<button data-ctrl="${f.callsign}" class="text-[11px] font-mono font-bold px-2.5 py-1.5 rounded-lg border ${f.stripState==="pending" ? "bg-white border-sky-300 text-sky-800" : "bg-emerald-50 border-emerald-300 text-emerald-800"}">${f.callsign}: ${f.stripState==="pending" ? "marcar lista ✓" : "✓ lista"}</button>`).join("")}
-          </div>
-        </div>
+        ${matchCard}
+        ${emptyState}
       </div>`;
   }
 
-  // -- Detalle de autorización + readback --
+  // Fila etiqueta/valor de la autorización en orden CRAFT.
+  function craftRow(n, label, value, opts) {
+    opts = opts || {};
+    return `
+      <div class="flex items-center gap-3 px-3 py-2.5 ${opts.hl ? "bg-amber-50 border border-amber-200" : "bg-slate-50 border border-slate-200/80"} rounded-lg">
+        <span class="w-6 h-6 shrink-0 rounded-full ${opts.hl ? "bg-amber-500" : "bg-navy"} text-white text-[11px] font-mono font-bold flex items-center justify-center">${n}</span>
+        <span class="text-[10px] text-slate-500 uppercase font-semibold font-mono tracking-wider w-24 shrink-0">${label}</span>
+        <span class="text-[15px] font-mono font-bold ${opts.hl ? "text-amber-800" : "text-navy"} tracking-wide flex-1 min-w-0">${value}</span>
+        ${opts.badge || ""}
+      </div>`;
+  }
+
+  // -- Detalle: espera de autorización o autorización CRAFT + readback --
   function viewClearanceDetail(callsign) {
-    const f = FLIGHTS.find(x => x.callsign === callsign);
+    const f = Net.find(callsign);
     if (!f) { selectedFlight = null; return viewClearanceSearch(); }
     const c = f.clearance;
     const acked = f.stripState === "acknowledged";
-    const t = pdcTimes(c);                 // emisión / expiración vivas
-    const exp = expiryStatus(t.expires);   // estado + aviso visual
+    const released = f.stripState === "ready" || f.stripState === "delivered" || acked;
+    const t = pdcTimes(c);
+    const exp = expiryStatus(t.expires);
     const expired = exp.key === "expired";
-    const pdcText = pdcRaw(f, t);          // telegrama PDC con tiempo vivo
-    const canWilco = !acked && !expired;
+    const pdcText = pdcRaw(f, t);
 
-    const block = (label, val, sub, accent = "text-navy") => `
-      <div class="flex flex-col bg-slate-50 border border-slate-200/80 rounded-lg p-3">
-        <span class="text-[10px] text-slate-500 uppercase font-semibold font-mono tracking-wider">${label}</span>
-        <span class="text-[20px] font-mono font-bold ${accent} mt-0.5 leading-tight">${val}</span>
-        ${sub ? `<span class="text-[11px] text-slate-500 font-mono mt-0.5">${sub}</span>` : ""}
-      </div>`;
+    const backBtn = `
+      <button id="backSearch" class="flex items-center gap-1 text-slate-500 text-[13px] font-semibold self-start">
+        <span class="material-symbols-outlined text-[18px]">arrow_back</span> ${released ? "Volver a búsqueda" : "Cancelar asignación"}
+      </button>`;
 
+    // Cabecera del vuelo (común a espera y autorización).
+    const flightHeader = card(`
+      <div class="p-4 space-y-3">
+        <div class="flex items-center justify-between gap-2">
+          <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full ${acked ? "bg-emerald-600 border-emerald-600" : released ? "bg-emerald-50 border-emerald-200" : "bg-sky-50 border-sky-200"} border">
+            <span class="material-symbols-outlined ${acked ? "text-white" : released ? "text-emerald-700" : "text-sky-700"} text-[18px]">${acked ? "check_circle" : released ? "verified" : "hourglass_top"}</span>
+            <span class="text-[12px] font-bold font-mono ${acked ? "text-white" : released ? "text-emerald-800" : "text-sky-800"}">${acked ? "RECIBIDA · WILCO" : released ? "AUTORIZADO CLEARTO" : "VUELO ASIGNADO"}</span>
+          </div>
+          ${released ? expChip(exp) : connPill()}
+        </div>
+        <div class="flex items-end justify-between">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-2">
+              <span class="text-[28px] font-bold text-navy tracking-tight leading-none">${f.callsign}</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono border border-slate-200">${f.type} / ${f.wtc}</span>
+            </div>
+            <span class="text-[13px] text-slate-500 font-mono mt-1">${f.adep} → ${f.ades} · ${f.adesCity}</span>
+          </div>
+          <div class="flex flex-col items-end">
+            <span class="text-[10px] text-slate-400 font-mono">STAND / EOBT</span>
+            <span class="text-[14px] font-mono font-bold text-navy">${f.stand} · ${f.eobt}</span>
+          </div>
+        </div>
+        ${released ? `
+        <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-0.5 border-t border-slate-100">
+          <span class="pt-1.5">EMITIDA: <b class="text-navy">${zCompact(t.issued)}</b></span>
+          <span class="pt-1.5">RECIBIDA <span id="pdcAge">${humanAge(agoMin(T0))}</span></span>
+        </div>` : ""}
+      </div>
+    `);
+
+    // ----- Estado de ESPERA (asignado, controlador aún no libera) -----
+    if (!released) {
+      return `
+        <div class="flex flex-col w-full px-4 space-y-3 pt-3 select-none">
+          ${backBtn}
+          ${flightHeader}
+          ${card(`
+            <div class="p-6 flex flex-col items-center text-center gap-3">
+              <span class="material-symbols-outlined text-sky-500 text-[44px] animate-pulse">cloud_sync</span>
+              <span class="text-[15px] font-bold text-navy">En espera de autorización</span>
+              <p class="text-[12px] text-slate-500 leading-snug max-w-[16rem]">Tu vuelo quedó asignado. El controlador está completando la autorización en la franja; aparecerá aquí en cuanto la marque <b>lista para entregar</b>.</p>
+              <div class="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
+                <span class="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse"></span> ESPERANDO CHECK DEL CONTROLADOR
+              </div>
+            </div>
+          `)}
+        </div>`;
+    }
+
+    // ----- Autorización liberada: orden CRAFT + readback -----
+    const ssrBadge = c.ssrSim ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-mono font-bold border border-amber-300 shrink-0">SIM</span>` : "";
     return `
       <div class="flex flex-col w-full px-4 space-y-3 pt-3 select-none">
-        <button id="backSearch" class="flex items-center gap-1 text-slate-500 text-[13px] font-semibold self-start">
-          <span class="material-symbols-outlined text-[18px]">arrow_back</span> Volver a búsqueda
-        </button>
+        ${backBtn}
+        ${flightHeader}
 
-        <!-- Status header -->
-        ${card(`
-          <div class="p-4 space-y-3">
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full ${acked ? "bg-emerald-600 border-emerald-600" : "bg-emerald-50 border-emerald-200"} border">
-                <span class="material-symbols-outlined ${acked ? "text-white" : "text-emerald-700"} text-[18px]">${acked ? "check_circle" : "verified"}</span>
-                <span class="text-[12px] font-bold font-mono ${acked ? "text-white" : "text-emerald-800"}">${acked ? "RECIBIDA · WILCO" : "AUTORIZADO CLEARTO"}</span>
-              </div>
-              ${expChip(exp)}
-            </div>
-            <div class="flex items-end justify-between">
-              <div class="flex flex-col">
-                <div class="flex items-center gap-2">
-                  <span class="text-[28px] font-bold text-navy tracking-tight leading-none">${f.callsign}</span>
-                  <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono border border-slate-200">${f.reg} · ${f.type}</span>
-                </div>
-                <span class="text-[13px] text-slate-500 font-mono mt-1">${f.origin} → ${f.dest} · ${f.originCity} → ${f.destCity}</span>
-              </div>
-              <div class="flex flex-col items-end">
-                <span class="text-[10px] text-slate-400 font-mono">GATE / EOBT</span>
-                <span class="text-[14px] font-mono font-bold text-navy">${f.gate} · ${f.eobt}</span>
-              </div>
-            </div>
-            <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-0.5 border-t border-slate-100">
-              <span class="pt-1.5">EMITIDA: <b class="text-navy">${zCompact(t.issued)}</b></span>
-              <span class="pt-1.5">RECIBIDA <span id="pdcAge">${humanAge(agoMin(T0))}</span></span>
-            </div>
-          </div>
-        `)}
-
-        <!-- ATC Pre-departure clearance -->
+        <!-- Autorización ATC en orden CRAFT -->
         ${card(`
           <div class="p-4 space-y-2.5">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <span class="material-symbols-outlined text-sky-700 text-[20px]">verified_user</span>
-                <span class="text-[15px] font-bold text-navy leading-tight">ATC PRE-DEPARTURE<br>CLEARANCE</span>
+                <span class="text-[15px] font-bold text-navy leading-tight">AUTORIZACIÓN ATC</span>
               </div>
-              <div class="flex flex-col items-end"><span class="text-[10px] text-slate-400 font-mono">SEQ</span><span class="text-[13px] font-mono font-bold text-navy">${f.seq}</span></div>
+              <span class="text-[10px] px-2 py-0.5 rounded bg-navy text-white font-mono font-bold tracking-widest">CRAFT</span>
             </div>
-            <div class="grid grid-cols-2 gap-2.5">
-              ${block("ASSIGNED SID", c.sid, c.sidNote)}
-              ${block("DEPARTURE RWY", "RWY " + c.depRwy, c.rwyNote, "text-sky-700")}
-            </div>
-            <div class="grid grid-cols-2 gap-2.5">
-              ${block("CLIMB ALTITUDE", c.climbAlt, c.climbAltFt + " · " + c.expect)}
-              <div class="flex flex-col bg-amber-50 border border-amber-200 rounded-lg p-3 items-center text-center">
-                <span class="text-[10px] text-amber-700 uppercase font-semibold font-mono tracking-wider">SQUAWK</span>
-                <span class="text-[22px] font-mono font-bold text-amber-800 mt-0.5">${c.squawk}</span>
-                <span class="text-[10px] text-amber-700/80 font-mono">${c.squawkNote}</span>
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-2.5">
-              <div class="flex items-center justify-between bg-slate-50 border border-slate-200/80 rounded-lg p-3">
-                <div class="flex flex-col"><span class="text-[10px] text-slate-500 font-mono">DELIVERY</span><span class="text-[15px] font-mono font-bold text-navy">${c.freqDelivery}</span></div>
-                <span class="material-symbols-outlined text-slate-400 text-[18px]">headset_mic</span>
-              </div>
-              <div class="flex items-center justify-between bg-slate-50 border border-slate-200/80 rounded-lg p-3">
-                <div class="flex flex-col"><span class="text-[10px] text-slate-500 font-mono">SCL GROUND</span><span class="text-[15px] font-mono font-bold text-navy">${c.freqGround}</span></div>
-                <span class="material-symbols-outlined text-slate-400 text-[18px]">cell_tower</span>
-              </div>
+            <div class="flex flex-col gap-2">
+              ${craftRow(1, "Límite", `${c.limit} <span class="text-slate-400 font-normal">· ${c.limitName}</span>`)}
+              ${craftRow(2, "Ruta", c.route)}
+              ${craftRow(3, "Nivel", `${c.level}${c.levelNote ? ` <span class="text-slate-400 font-normal">${c.levelNote}</span>` : ""}`)}
+              ${craftRow(4, "Pista", "RWY " + c.rwy)}
+              ${craftRow(5, "SID", c.sid)}
+              ${craftRow(6, "Frecuencia", c.freq)}
+              ${craftRow(7, "SSR", c.ssr, { hl: true, badge: ssrBadge })}
             </div>
           </div>
         `)}
@@ -737,8 +697,8 @@
           </div>
         `)}
 
-        ${entry("flight_takeoff", "text-sky-700", "PDC LAN502", "WILCO / ACK", "bg-emerald-50 text-emerald-800 border-emerald-200", "15:40Z",
-          col("DEP RWY", "17R") + col("SID", "ALKUM 4A") + col("INIT", "FL120") + col("SQUAWK", "4216") + col("CANAL", "CLEARTO") + col("ESTADO", "ACTIVO"),
+        ${entry("flight_takeoff", "text-sky-700", "PDC LAE2541", "WILCO / ACK", "bg-emerald-50 text-emerald-800 border-emerald-200", "15:40Z",
+          col("LÍMITE", "KMIA") + col("RUTA", "DONTI") + col("NIVEL", "FL280") + col("PISTA", "17R") + col("SID", "DONTI5B") + col("SSR", "5370"),
           `<span class="material-symbols-outlined text-[16px]">check_circle</span> Crew Readback Confirmed`, "text-emerald-700")}
 
         ${entry("cloud", "text-sky-700", "D-ATIS SCEL DEP", "ROMEO", "bg-sky-50 text-sky-800 border-sky-200", "15:30Z",
@@ -749,8 +709,8 @@
           col("QNH", "1016") + col("WIND", "180/08") + col("RWY", "17R") + col("VIS", "10KM+") + col("TL", "FL195") + col("EST", "ARCHIVED"),
           `Superseded by Info ROMEO (15:30Z)`, "text-slate-400")}
 
-        ${entry("flight_takeoff", "text-slate-500", "PDC SKU301", "COMPLETED", "bg-slate-100 text-slate-600 border-slate-200", "13:15Z",
-          col("DEP RWY", "17R") + col("SID", "EROKA 3B") + col("INIT", "FL170") + col("SQUAWK", "2105") + col("GATE", "22") + col("SLOT", "13:40Z"),
+        ${entry("flight_takeoff", "text-slate-500", "PDC LAN102", "COMPLETED", "bg-slate-100 text-slate-600 border-slate-200", "13:15Z",
+          col("LÍMITE", "SCSE") + col("RUTA", "ANDAK") + col("NIVEL", "FL260") + col("PISTA", "17R") + col("SID", "DONTI1R") + col("SSR", "5374"),
           `<span class="material-symbols-outlined text-[16px]">flight</span> Flight Airborne / En-route`, "text-slate-500")}
 
         <!-- NOTAM -->
@@ -827,8 +787,8 @@
     FLIGHTS.forEach(f => {
       const t = pdcTimes(f.clearance);
       L.push("");
-      L.push("- " + f.callsign + " (" + f.reg + " " + f.type + ") " + f.origin + ">" + f.dest + "  [" + (stName[f.stripState] || f.stripState) + "]");
-      L.push("  EOBT " + f.eobt + " · GATE " + f.gate + " · EXP " + zClock(t.expires));
+      L.push("- " + f.callsign + " (" + f.type + ") " + f.adep + ">" + f.ades + "  [" + (stName[f.stripState] || f.stripState) + "]");
+      L.push("  EOBT " + f.eobt + " · STAND " + f.stand + " · EXP " + zClock(t.expires));
       if (f.stripState !== "pending") pdcRaw(f, t).split("\n").forEach(l => L.push("    " + l));
       else L.push("    (autorización aún no emitida)");
     });
@@ -903,14 +863,15 @@
       printTelegram(decodeURIComponent(b.dataset.print), b.dataset.printTitle || "TELEGRAMA");
     });
 
-    // Dashboard -> solicitar
+    // Dashboard -> asignar este vuelo (acceso rápido)
     const dashReq = $("#dashRequest");
     if (dashReq) dashReq.onclick = () => {
       const cs = ($("#dashCallsign")?.value || "").trim().toUpperCase();
-      const f = FLIGHTS.find(x => x.callsign === cs);
+      const f = Net.find(cs);
       if (!f) return toast("Vuelo no encontrado en franjas SCEL", "error");
-      if (f.stripState === "pending") return toast("Autorización aún no está lista (controlador en proceso)", "hourglass_top");
+      Net.assign(cs);
       selectedFlight = cs; activeTab = "clearance"; render();
+      toast(cs + " asignado a tu tablet", "assignment_turned_in");
     };
 
     // ATIS toggle + confirm
@@ -918,7 +879,7 @@
     const atisC = $("#atisConfirm");
     if (atisC) atisC.onclick = () => toast("Lectura de D-ATIS confirmada en DGAC", "verified");
 
-    // Clearance search
+    // Clearance search (solo buscar; la asignación es un botón aparte)
     const go = $("#searchGo");
     if (go) go.onclick = doSearch;
     const inp = $("#searchCallsign");
@@ -926,54 +887,34 @@
     document.querySelectorAll("#searchClear").forEach(b => b.onclick = () => { searchQuery = ""; render(); });
     function doSearch() {
       const cs = ($("#searchCallsign")?.value || "").trim().toUpperCase();
-      if (!cs) { searchQuery = ""; render(); return toast("Ingresa un indicativo", "flight"); }
-      // 1) Coincidencia exacta.
-      const exact = FLIGHTS.find(x => x.callsign === cs);
-      if (exact) {
-        if (exact.stripState === "pending") { searchQuery = cs; render(); return toast("Autorización aún no está lista para " + cs, "hourglass_top"); }
-        selectedFlight = cs; searchQuery = ""; return render();
-      }
-      // 2) Coincidencias parciales.
-      const partial = FLIGHTS.filter(x => x.callsign.includes(cs));
-      if (partial.length === 1 && selectable(partial[0].stripState)) {
-        selectedFlight = partial[0].callsign; searchQuery = ""; return render();
-      }
       searchQuery = cs; render();
-      if (!partial.length) toast(`Sin coincidencias para ${cs}`, "search_off");
-      else toast(`${partial.length} coincidencia(s) para "${cs}"`, "search");
+      if (!cs) return toast("Ingresa un indicativo", "flight");
+      if (!Net.find(cs)) toast(`Sin coincidencias para ${cs}`, "search_off");
     }
 
-    // Filas de vuelo
-    document.querySelectorAll("[data-flight]").forEach(b => b.onclick = () => {
-      selectedFlight = b.dataset.flight; render();
+    // Asignar este vuelo (piloto vincula su vuelo)
+    document.querySelectorAll("[data-assign]").forEach(b => b.onclick = () => {
+      const cs = b.dataset.assign;
+      Net.assign(cs);
+      selectedFlight = cs; searchQuery = ""; render();
+      toast(cs + " asignado a tu tablet", "assignment_turned_in");
     });
 
-    // Simulador de controlador
-    document.querySelectorAll("[data-ctrl]").forEach(b => b.onclick = () => {
-      const cs = b.dataset.ctrl;
-      const f = FLIGHTS.find(x => x.callsign === cs);
-      if (!f) return;
-      if (f.stripState === "pending") { setStripState(cs, "ready"); toast(cs + ": autorización marcada LISTA ✓", "check_circle"); }
-      else if (f.stripState === "ready") { setStripState(cs, "pending"); toast(cs + ": vuelta a EN PROCESO", "undo"); }
-      render();
-    });
-
-    // Volver a búsqueda
+    // Volver a búsqueda / cancelar asignación
     const back = $("#backSearch");
     if (back) back.onclick = () => { selectedFlight = null; render(); };
 
     // WILCO / readback digital
     const wilco = $("#wilcoBtn");
     if (wilco) wilco.onclick = () => {
-      const f = FLIGHTS.find(x => x.callsign === selectedFlight);
+      const f = Net.find(selectedFlight);
       if (!f) return;
       // Revalida expiración en el momento de colacionar.
       if (expiryStatus(pdcTimes(f.clearance).expires).key === "expired") {
         toast("Clearance expirada: solicita una nueva", "error");
         return render();
       }
-      // Simula el intercambio: primero 'delivered' (piloto la tiene), luego ack tras colacionar
-      setStripState(f.callsign, "acknowledged");
+      Net.wilco(f.callsign);
       toast("Readback digital enviado · franja: RECIBIDA", "done_all");
       render();
     };
@@ -1001,6 +942,13 @@
     }
   }
   setInterval(refreshLive, 15000);
+
+  // ---- NetLink: sincronización con el controlador (server LAN) ----
+  if (window.Net) {
+    Net.onChange(() => render());
+    Net.onStatus(() => render());
+    Net.connect();
+  }
 
   render();
 

@@ -1,10 +1,13 @@
 // ============================================================
-// ClearTO — Datos simulados (maqueta). Sin backend.
-// En producción esto vendrá del servidor DGAC / franja de
-// progreso de vuelo (Flight Progress Strip) vía datalink.
+// ClearTO — Datos simulados (maqueta). Sin backend "pesado".
+// En la plataforma de dos tablets, el SERVIDOR (server.js) mantiene
+// el estado autoritativo por indicativo; esto es solo la SEMILLA
+// inicial y el fallback offline (GitHub Pages) por localStorage.
 // ============================================================
 
 // Estado del aeródromo SCEL (Comodoro Arturo Merino Benítez / Pudahuel)
+// TODO(Felipe): reemplazar por datos reales del eAIP SCEL cuando lo compartas
+// (esta sección alimenta el Tablero: pistas, TL, elevación, frecuencias…).
 window.SCEL = {
   icao: "SCEL",
   iata: "SCL",
@@ -52,97 +55,129 @@ window.ATIS = {
   }
 };
 
-// Enlaces de datos (estado de servidores) — simulado
+// Enlaces de datos / estado de conexión — se muestran como indicadores pequeños.
 window.LINKS = [
-  { id: "central", name: "SERVIDOR CENTRAL CLEARTO", sub: "CONECTADO IP / TLS 1.3", status: "CONECTADO", dot: "emerald" },
-  { id: "datis",   name: "D-ATIS SERVER",           sub: "DEP: INFO R | ARR: INFO Q", status: "ONLINE", dot: "sky" },
-  { id: "pdc",     name: "D-CLEARANCE (PDC)",        sub: "PROMEDIO: ~45 SEG", status: "EN LÍNEA / ACTIVO", dot: "emerald" }
+  { id: "net",   name: "ENLACE LAN",     dot: "emerald" },
+  { id: "datis", name: "D-ATIS",         dot: "sky" },
+  { id: "pdc",   name: "D-CLEARANCE",    dot: "emerald" }
 ];
 
 // ============================================================
-// VUELOS — cada uno representa una franja de progreso de vuelo.
-// stripState modela lo que el controlador marca en la franja:
-//   'pending'  -> controlador aún no completa la autorización
-//   'ready'    -> controlador puso el check "lista para entregar"
-//   'delivered'-> el piloto la obtuvo en la app (aún sin readback)
-//   'acknowledged' -> readback digital recibido; ciclo cerrado
-// En la maqueta, 'ready' se puede simular con el botón "Simular
-// controlador" para probar el flujo completo sin la franja real.
+// VUELOS / FRANJAS DE SALIDA SCEL — datos tomados de la franja
+// electrónica real (imagen de referencia de Felipe). Cada vuelo es
+// una franja de progreso. La AUTORIZACIÓN se muestra en orden CRAFT:
+//   limit (límite) · route (ruta) · level (nivel) · rwy (pista) ·
+//   sid · freq (frecuencia) · ssr.
+//
+// stripState (ciclo de autorización, sincronizado por el servidor):
+//   'pending'      -> controlador aún completa/no ha soltado la ANC
+//   'ready'        -> controlador marcó "lista para entregar" (check)
+//   'assigned'     -> el piloto tomó/vinculó el vuelo en su tablet
+//   'delivered'    -> el piloto abrió la autorización (aún sin colacionar)
+//   'acknowledged' -> readback digital (WILCO) recibido; ciclo cerrado
+//
+// TODO(Felipe): confirmar/ajustar dos campos que la imagen no deja 100% claros:
+//   1) SSR: solo LAE2541 muestra 5370 en la franja; el resto van con códigos
+//      PLAUSIBLES pero SIMULADOS (marcados). Corrige con los reales.
+//   2) level ("280 RCLE"): lo interpreté como nivel autorizado inicial
+//      (RCLE = recleared). Si "280" es otra cosa (p. ej. límite de ascenso),
+//      dímelo y lo remodelo.
 // ============================================================
 window.FLIGHTS = [
   {
-    callsign: "LAN502",
-    reg: "CC-BBA",
-    type: "B789",
-    wtc: "H",
-    origin: "SCEL", originCity: "SANTIAGO",
-    dest: "SPJC", destCity: "LIMA",
-    gate: "14B", eobt: "1615Z",
-    stripState: "ready",           // controlador ya la dejó lista
-    seq: "084",
+    callsign: "LXP376", type: "A20N", wtc: "M",
+    adep: "SCEL", ades: "SCCF", adesCity: "BALMACEDA",
+    eobt: "1845", stand: "B22", rfl: "F360",
+    stripState: "pending",
     clearance: {
-      sid: "ALKUM 4A",
-      sidNote: "Climb via SID restrictions",
-      depRwy: "17R",
-      rwyNote: "TORA 3,800M · DRY",
-      climbAlt: "FL120",
-      climbAltFt: "12,000 FT",
-      expect: "Expect FL380 @ 10 MIN",
-      squawk: "4216",
-      squawkNote: "XPDR MODE C/S",
-      freqDelivery: "121.100",
-      freqGround: "121.900",
-      issuedAgoMin: 4, validForMin: 90
+      limit: "SCCF", limitName: "BALMACEDA",
+      route: "PABOS UQ814",
+      level: "FL280", levelNote: "RCLE",
+      rwy: "17R",
+      sid: "DILOK1R",
+      freq: "119.7",
+      ssr: "5371", ssrSim: true,
+      issuedAgoMin: 2, validForMin: 90
     }
   },
   {
-    callsign: "LAN501",
-    reg: "CC-BFC",
-    type: "A320",
-    wtc: "M",
-    origin: "SCEL", originCity: "SANTIAGO",
-    dest: "SCFA", destCity: "ANTOFAGASTA",
-    gate: "14", eobt: "1640Z",
-    stripState: "pending",         // controlador aún trabajando
-    seq: "085",
+    callsign: "JAT044", type: "A20N", wtc: "M",
+    adep: "SCEL", ades: "SCCF", adesCity: "BALMACEDA",
+    eobt: "1835", stand: "A12A", rfl: "F360",
+    stripState: "pending",
     clearance: {
-      sid: "EROKA 3B",
-      sidNote: "Climb via SID restrictions",
-      depRwy: "17R",
-      rwyNote: "TORA 3,800M · DRY",
-      climbAlt: "FL170",
-      climbAltFt: "17,000 FT",
-      expect: "Expect FL350 @ 8 MIN",
-      squawk: "2105",
-      squawkNote: "XPDR MODE C/S",
-      freqDelivery: "121.100",
-      freqGround: "121.900",
+      limit: "SCCF", limitName: "BALMACEDA",
+      route: "PABOS UQ814",
+      level: "FL280", levelNote: "",
+      rwy: "17R",
+      sid: "DILOK1R",
+      freq: "119.7",
+      ssr: "5372", ssrSim: true,
+      issuedAgoMin: 2, validForMin: 90
+    }
+  },
+  {
+    callsign: "LAN740", type: "A321", wtc: "M",
+    adep: "SCEL", ades: "SBPA", adesCity: "PORTO ALEGRE",
+    eobt: "1815", stand: "D2", rfl: "F270",
+    stripState: "ready",
+    clearance: {
+      limit: "SBPA", limitName: "PORTO ALEGRE",
+      route: "ALBAL",
+      level: "FL270", levelNote: "",
+      rwy: "17R",
+      sid: "ALBAL7C",
+      freq: "119.7",
+      ssr: "5373", ssrSim: true,
+      issuedAgoMin: 3, validForMin: 90
+    }
+  },
+  {
+    callsign: "LAN102", type: "A321", wtc: "M",
+    adep: "SCEL", ades: "SCSE", adesCity: "LA SERENA",
+    eobt: "1810", stand: "B28", rfl: "F260",
+    stripState: "ready",
+    clearance: {
+      limit: "SCSE", limitName: "LA SERENA",
+      route: "ANDAK UQ802",
+      level: "FL260", levelNote: "",
+      rwy: "17R",
+      sid: "DONTI1R",
+      freq: "119.7",
+      ssr: "5374", ssrSim: true,
       issuedAgoMin: 1, validForMin: 90
     }
   },
   {
-    callsign: "SKU301",
-    reg: "CC-AWA",
-    type: "A320N",
-    wtc: "M",
-    origin: "SCEL", originCity: "SANTIAGO",
-    dest: "SCFA", destCity: "ANTOFAGASTA",
-    gate: "22", eobt: "1705Z",
-    stripState: "acknowledged",    // ya completado (histórico)
-    seq: "083",
+    callsign: "LAE2541", type: "B763", wtc: "H",
+    adep: "SCEL", ades: "KMIA", adesCity: "MIAMI",
+    eobt: "1800", stand: "R41", rfl: "F320",
+    stripState: "acknowledged",
     clearance: {
-      sid: "EROKA 3B",
-      sidNote: "Climb via SID restrictions",
-      depRwy: "17R",
-      rwyNote: "TORA 3,800M · DRY",
-      climbAlt: "FL170",
-      climbAltFt: "17,000 FT",
-      expect: "Expect FL350 @ 8 MIN",
-      squawk: "2105",
-      squawkNote: "XPDR MODE C/S",
-      freqDelivery: "121.100",
-      freqGround: "121.900",
+      limit: "KMIA", limitName: "MIAMI",
+      route: "DONTI",
+      level: "FL280", levelNote: "RCLE",
+      rwy: "17R",
+      sid: "DONTI5B",
+      freq: "119.7",
+      ssr: "5370", ssrSim: false,
       issuedAgoMin: 150, validForMin: 60
+    }
+  },
+  {
+    callsign: "LAP1325", type: "A320", wtc: "M",
+    adep: "SCEL", ades: "SGAS", adesCity: "ASUNCIÓN",
+    eobt: "1830", stand: "F3A", rfl: "F370",
+    stripState: "pending",
+    clearance: {
+      limit: "SGAS", limitName: "ASUNCIÓN",
+      route: "ALBAL",
+      level: "FL270", levelNote: "RCLE",
+      rwy: "17R",
+      sid: "ALBAL7C",
+      freq: "119.7",
+      ssr: "5375", ssrSim: true,
+      issuedAgoMin: 2, validForMin: 90
     }
   }
 ];

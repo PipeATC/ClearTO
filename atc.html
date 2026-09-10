@@ -2,41 +2,37 @@
 <html class="light" lang="es">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
-  <title>ClearTO — D-ATIS & D-Clearance SCEL</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <title>ClearTO ATC — Franja Electrónica SCEL</title>
   <meta name="theme-color" content="#0b2b5c"/>
-  <link rel="manifest" href="manifest.webmanifest"/>
   <link rel="apple-touch-icon" href="icons/icon-192.png"/>
   <link rel="icon" href="icons/icon-192.png"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
-  <meta name="apple-mobile-web-app-title" content="ClearTO"/>
+  <meta name="apple-mobile-web-app-title" content="ClearTO ATC"/>
 
   <link href="https://fonts.googleapis.com" rel="preconnect"/>
   <link crossorigin href="https://fonts.gstatic.com" rel="preconnect"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"/>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"/>
 
-  <!-- Tailwind compilado localmente (sin CDN): elimina la dependencia de red,
-       mejora el arranque offline y quita el warning de producción del CDN.
-       Regenerar con la config de build del repo (ver CLAUDE.md §7). -->
+  <!-- Tailwind compilado local (mismo CSS que la app del piloto). -->
   <link rel="stylesheet" href="styles.css"/>
   <style>
-    html, body { width: 100vw; margin: 0; padding: 0; background-color: #f4f7fb; }
+    html, body { width: 100vw; margin: 0; padding: 0; background-color: #eef2f7; }
     body { overscroll-behavior: none; font-family: "Public Sans", sans-serif; }
     .font-mono { font-family: "JetBrains Mono", monospace; }
     .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
     .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
-    ::-webkit-scrollbar { display: none; }
     input:focus { outline: none; box-shadow: none; }
   </style>
 </head>
-<body class="bg-surface font-body text-navy antialiased selection:bg-primary selection:text-white">
+<body class="bg-surface-container-high font-body text-navy antialiased">
   <div id="app"></div>
-  <!-- jsPDF vendorizado (offline) para el export del "binder de vuelo" (PDF). -->
-  <script src="vendor/jspdf.umd.min.js"></script>
+  <!-- Rol: controlador (la franja electrónica). Debe ir ANTES de netlink.js. -->
+  <script>window.CLEARTO_ROLE = "atc";</script>
   <script src="data.js"></script>
   <script src="netlink.js"></script>
-  <script src="app.js"></script>
+  <script src="atc.js"></script>
 </body>
 </html>

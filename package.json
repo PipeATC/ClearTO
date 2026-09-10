@@ -6,7 +6,8 @@
   "scripts": {
     "build:css": "tailwindcss -c tailwind.config.js -i styles.input.css -o styles.css --minify",
     "watch:css": "tailwindcss -c tailwind.config.js -i styles.input.css -o styles.css --watch",
-    "start": "python3 -m http.server 8000"
+    "start": "node server.js",
+    "serve:static": "python3 -m http.server 8000"
   },
   "devDependencies": {
     "@tailwindcss/container-queries": "0.1.1",
