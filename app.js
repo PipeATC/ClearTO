@@ -55,7 +55,7 @@
       `APCH ILS Y ${a.arrRwy}`,
       "EXP SALIDA FLW SID SEGUN PLAN",
       `CONTACTO SANTIAGO AUTORIZACIONES ${SCEL.freqs.delivery} TRAS COLACION`,
-      "--- TRANSMISION DIRECTA VIA APP CLEARTO ---",
+      "--- TRANSMISION DIRECTA VIA APP ClearTO ---",
       "DGAC SCEL ---"
     ].join("\n");
   }
@@ -80,7 +80,7 @@
       `DEP RWY ${c.rwy} SID ${c.sid}`,
       `SQUAWK ${c.ssr}`,
       `FREQ ${c.freq}`,
-      "ENLACE DIRECTO APP CLEARTO DGAC CHILE"
+      "ENLACE DIRECTO APP ClearTO DGAC CHILE"
     ].join("\n");
   }
   // Estado de expiración de una clearance con aviso visual.
@@ -118,7 +118,7 @@
           <div class="flex flex-col">
             <div class="flex items-center gap-1.5">
               <span class="font-mono text-[13px] text-navy font-bold tracking-wider">SCEL / SCL</span>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 font-semibold tracking-wide border border-sky-200/60 font-mono">CLEARTO APP</span>
+              <span class="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-800 font-semibold tracking-wide border border-sky-200/60 font-mono">ClearTO APP</span>
             </div>
             <span class="text-[15px] font-bold text-navy uppercase tracking-tight">DGAC CHILE</span>
           </div>
@@ -551,7 +551,7 @@
         <div class="flex items-center justify-between gap-2">
           <div class="flex items-center gap-1.5 px-3 py-1.5 rounded-full ${acked ? "bg-emerald-600 border-emerald-600" : released ? "bg-emerald-50 border-emerald-200" : "bg-sky-50 border-sky-200"} border">
             <span class="material-symbols-outlined ${acked ? "text-white" : released ? "text-emerald-700" : "text-sky-700"} text-[18px]">${acked ? "check_circle" : released ? "verified" : "hourglass_top"}</span>
-            <span class="text-[12px] font-bold font-mono ${acked ? "text-white" : released ? "text-emerald-800" : "text-sky-800"}">${acked ? "RECIBIDA · WILCO" : released ? "AUTORIZADO CLEARTO" : "VUELO ASIGNADO"}</span>
+            <span class="text-[12px] font-bold font-mono ${acked ? "text-white" : released ? "text-emerald-800" : "text-sky-800"}">${acked ? "RECIBIDA · WILCO" : released ? "AUTORIZADO ClearTO" : "VUELO ASIGNADO"}</span>
           </div>
           ${released ? expChip(exp) : connPill()}
         </div>
@@ -627,7 +627,7 @@
         ${card(`
           <div class="p-4 space-y-2.5">
             <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">${dot("emerald")}<span class="text-[12px] font-bold text-navy font-mono tracking-wide leading-tight">AUTORIZACIÓN DIGITAL PDC<br><span class="text-slate-400 font-normal">(CLEARTO SECURE LINK)</span></span></div>
+              <div class="flex items-center gap-2">${dot("emerald")}<span class="text-[12px] font-bold text-navy font-mono tracking-wide leading-tight">AUTORIZACIÓN DIGITAL PDC<br><span class="text-slate-400 font-normal">(ClearTO SECURE LINK)</span></span></div>
               <button data-copy="${encodeURIComponent(pdcText)}" class="flex items-center gap-1 text-[12px] text-slate-500 font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5">
                 <span class="material-symbols-outlined text-[16px]">content_copy</span> COPIAR
               </button>
