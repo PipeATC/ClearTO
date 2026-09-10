@@ -1,0 +1,19 @@
+# Config mínima para el build de GitHub Pages (Jekyll).
+# El sitio es estático (HTML/JS/CSS plano, sin front matter): Jekyll copia los
+# archivos tal cual. Solo forzamos incluir vendor/ — Jekyll lo excluye por
+# defecto y ahí vive jspdf.umd.min.js (necesario para el export a PDF).
+include:
+  - vendor
+# Archivos de build/desarrollo que no necesitan servirse en Pages.
+# OJO: NO excluir netlink.js — el piloto lo carga en runtime (cae a modo offline
+# cuando no hay servidor). server.js sí es solo del backend LAN.
+exclude:
+  - node_modules
+  - server.js
+  - package.json
+  - package-lock.json
+  - tailwind.config.js
+  - styles.input.css
+  - README.md
+  - CLAUDE.md
+  - .clearto-state.json
