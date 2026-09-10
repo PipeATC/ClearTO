@@ -15,14 +15,6 @@
   const pad2 = n => String(n).padStart(2, "0");
   function nowZ() { const d = new Date(); return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}Z`; }
 
-  // Estado de la franja → etiqueta + estilo.
-  const STATE = {
-    pending:      { txt: "EN PROCESO",    cls: "bg-slate-100 text-slate-600 border-slate-300", cs: "text-navy" },
-    ready:        { txt: "LISTA · ENTREGADA", cls: "bg-emerald-50 text-emerald-800 border-emerald-300", cs: "text-emerald-700" },
-    delivered:    { txt: "ENTREGADA",     cls: "bg-sky-50 text-sky-800 border-sky-300", cs: "text-sky-700" },
-    acknowledged: { txt: "RBACK · WILCO", cls: "bg-emerald-600 text-white border-emerald-600", cs: "text-emerald-700" }
-  };
-
   function connPill() {
     const on = window.Net && Net.online;
     return `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${on ? "bg-emerald-50 border-emerald-300" : "bg-slate-100 border-slate-300"} border">
@@ -53,92 +45,98 @@
     </header>`;
   }
 
-  // Bloque etiqueta/valor compacto de la franja.
-  const cell = (label, value, accent = "text-navy") => `
-    <div class="flex flex-col min-w-0">
-      <span class="text-[9px] font-mono text-slate-400 uppercase tracking-wider">${label}</span>
-      <span class="text-[13px] font-mono font-bold ${accent} truncate leading-tight">${value}</span>
-    </div>`;
+  // Banda del indicativo según gestión ATFM (solo estético).
+  const atfmBand = f => f.atfm === "regulado" ? "b-yellow" : f.atfm === "liberado" ? "b-green" : "";
 
-  // Campo editable inline.
-  const field = (key, label, value) => `
-    <label class="flex flex-col gap-0.5">
-      <span class="text-[9px] font-mono text-slate-400 uppercase tracking-wider">${label}</span>
-      <input data-edit="${key}" value="${value || ""}" class="w-full bg-white border border-slate-300 rounded px-2 py-1 font-mono text-[13px] font-bold text-navy uppercase" />
-    </label>`;
+  // Campo editable inline (estilo EFS).
+  const efield = (key, label, value) => `
+    <label><span class="l">${label}</span>
+      <input data-edit="${key}" value="${value || ""}" /></label>`;
 
+  // Franja de progreso de vuelo — estilo EFS real.
   function strip(f) {
-    const st = STATE[f.stripState] || STATE.pending;
     const c = f.clearance;
-    const pilotHere = !!f.assignedTo;
+    const reg = f.atfm === "regulado";
+    const band = atfmBand(f);
+    const pilotHere = !!f.assignedTo && f.stripState !== "acknowledged";
     const isEditing = editing === f.callsign;
 
-    // Barra de acciones según estado.
-    let actions;
+    // Ruta → fijo + aerovía (dos líneas).
+    const parts = (c.route || "").split(" ");
+    const fix = parts[0] || "";
+    const awy = parts.slice(1).join(" ");
+    const lvl = (c.level || "").replace(/^FL/, "");
+
+    // Celda de acciones (arriba: estado del ciclo; abajo: Form/retirar + ▾ + lápiz).
+    let top, bottomLeft;
     if (f.stripState === "acknowledged") {
-      actions = `<div class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 text-white text-[12px] font-bold font-mono">
-          <span class="material-symbols-outlined text-[18px]">done_all</span> AUTORIZACIÓN RECIBIDA</div>`;
+      top = `<div class="abtn rback done">RBACK ✓</div>`;
+      bottomLeft = `<div class="abtn" style="opacity:.55">Form</div>`;
     } else if (f.stripState === "ready" || f.stripState === "delivered") {
-      actions = `
-        <button data-recall="${f.callsign}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-bold font-mono active:scale-[0.98]">
-          <span class="material-symbols-outlined text-[18px]">undo</span> RETIRAR</button>
-        <div class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-800 text-[12px] font-bold font-mono">
-          <span class="material-symbols-outlined text-[18px]">hourglass_top</span> ESPERANDO RBACK</div>`;
+      top = `<div class="abtn rback">RBACK…</div>`;
+      bottomLeft = `<button class="abtn" data-recall="${f.callsign}">RETIRAR</button>`;
     } else {
-      actions = `
-        <button data-edit-toggle="${f.callsign}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-bold font-mono active:scale-[0.98]">
-          <span class="material-symbols-outlined text-[18px]">edit</span> ${isEditing ? "CERRAR" : "EDITAR"}</button>
-        <button data-ready="${f.callsign}" class="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary hover:bg-primary-dark text-white text-[12px] font-bold font-mono active:scale-[0.98] shadow-sm">
-          <span class="material-symbols-outlined text-[18px]">check_circle</span> MARCAR LISTA</button>`;
+      top = `<button class="abtn lista" data-ready="${f.callsign}">LISTA ✓</button>`;
+      bottomLeft = `<div class="abtn" style="opacity:.55">Form</div>`;
     }
 
-    const body = isEditing ? `
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-200">
-        ${field("limit", "Límite", c.limit)}
-        ${field("route", "Ruta", c.route)}
-        ${field("level", "Nivel", c.level)}
-        ${field("rwy", "Pista", c.rwy)}
-        ${field("sid", "SID", c.sid)}
-        ${field("freq", "Frecuencia", c.freq)}
-        ${field("ssr", "SSR", c.ssr)}
-        <div class="col-span-2 sm:col-span-3 flex gap-2 justify-end mt-1">
-          <button data-edit-cancel="1" class="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 text-[12px] font-bold font-mono">CANCELAR</button>
-          <button data-edit-save="${f.callsign}" class="px-3 py-1.5 rounded-lg bg-navy text-white text-[12px] font-bold font-mono">GUARDAR</button>
+    const editForm = isEditing ? `
+      <div class="efs-edit">
+        ${efield("limit", "Límite", c.limit)}
+        ${efield("route", "Ruta", c.route)}
+        ${efield("level", "Nivel", c.level)}
+        ${efield("rwy", "Pista", c.rwy)}
+        ${efield("sid", "SID", c.sid)}
+        ${efield("freq", "Frecuencia", c.freq)}
+        ${efield("ssr", "SSR", c.ssr)}
+        <div class="acts">
+          <button class="abtn" style="width:auto;padding:5px 12px" data-edit-cancel="1">CANCELAR</button>
+          <button class="abtn lista" style="width:auto;padding:5px 12px" data-edit-save="${f.callsign}">GUARDAR</button>
         </div>
-      </div>`
-      : `
-      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-x-3 gap-y-2 mt-2">
-        ${cell("Límite", c.limit + " · " + c.limitName)}
-        ${cell("Ruta", c.route)}
-        ${cell("Nivel", c.level + (c.levelNote ? " " + c.levelNote : ""))}
-        ${cell("Pista", "RWY " + c.rwy, "text-sky-700")}
-        ${cell("SID", c.sid)}
-        ${cell("Frecuencia", c.freq)}
-        ${cell("SSR", c.ssr, "text-amber-700")}
-      </div>`;
+      </div>` : "";
 
     return `
-      <div class="w-full bg-white border ${f.stripState === "acknowledged" ? "border-emerald-300" : "border-slate-200"} rounded-xl shadow-sm overflow-hidden">
-        <div class="p-3.5">
-          <div class="flex items-start justify-between gap-3 flex-wrap">
-            <!-- Identificación del vuelo -->
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="flex flex-col">
-                <div class="flex items-center gap-2">
-                  <span class="text-[20px] font-mono font-black ${st.cs} tracking-wide leading-none">${f.callsign}</span>
-                  ${pilotHere && f.stripState !== "acknowledged" ? `<span class="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-mono font-bold"><span class="material-symbols-outlined text-[12px]">person</span>PILOTO</span>` : ""}
-                </div>
-                <span class="text-[11px] font-mono text-slate-500 leading-tight mt-0.5">${f.type} · ${f.adep}→${f.ades} · EOBT ${f.eobt} · ${f.stand}</span>
-              </div>
-            </div>
-            <!-- Estado + acciones -->
-            <div class="flex items-center gap-2 flex-wrap justify-end">
-              <span class="text-[10px] px-2 py-0.5 rounded font-mono font-bold border ${st.cls}">${st.txt}</span>
-              ${actions}
+      <div>
+        <div class="strip${f.stripState === "acknowledged" ? " ack" : ""}">
+          <div class="cel c-id">
+            <div class="cs ${band}">${f.callsign}</div>
+            <div class="rw"><span class="ty">${f.type}</span>${pilotHere ? `<span class="plt">◉ PLT</span>` : ""}</div>
+            <div class="rw ft"><span>${f.ades}</span><span>${c.rwy}</span></div>
+          </div>
+          <div class="cel c-time">
+            <div>${f.eobt}</div>
+            <div class="cfl ${reg ? "atfm" : ""}">${f.rfl}</div>
+            <div class="ctot">${reg && f.ctot ? "CTOT " + f.ctot : ""}</div>
+          </div>
+          <div class="cel c-route">
+            <div class="rw"><span class="fix">${fix}</span><span class="awy">${awy}</span></div>
+            <div class="tick"></div>
+            <div class="sid">${c.sid}</div>
+          </div>
+          <div class="cel c-clr">
+            <div class="clr-top"><span class="lvl">${lvl}</span>${c.levelNote ? ` <span class="rcle">${c.levelNote}</span>` : ""}</div>
+            <div class="bigB">B</div>
+            <div class="freq">${c.freq}&#9651;</div>
+          </div>
+          <div class="cel c-ssr">
+            <div class="lab">SSR</div>
+            <div class="val">${c.ssr}</div>
+          </div>
+          <div class="cel c-coord">
+            <div class="nt"></div>
+            <div class="cd">COORD</div>
+            <div class="rw"><span class="stand">${f.stand}</span><span class="aro">ARO</span></div>
+          </div>
+          <div class="cel c-act">
+            ${top}
+            <div class="arow">
+              ${bottomLeft}
+              <div class="abtn drop">▾</div>
+              <span class="pencil" data-edit-toggle="${f.callsign}" title="Editar autorización">✎</span>
             </div>
           </div>
-          ${body}
         </div>
+        ${editForm}
       </div>`;
   }
 
@@ -159,12 +157,18 @@
           <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-600 text-white border border-emerald-600 font-mono font-bold">${ack} RECIBIDAS</span>
           <span class="ml-auto text-[10px] font-mono text-slate-400" id="stripSync">SYNC ${nowZ()}</span>
         </div>
-        <div class="flex flex-col gap-2.5">
+        <div class="efs">
           ${flights.map(strip).join("")}
         </div>
-        <p class="text-center text-[10px] text-slate-400 font-mono mt-4">
-          Franja electrónica ClearTO · marca <b>LISTA</b> para entregar la autorización al piloto por datalink. El readback (WILCO) llega en vivo.
-        </p>
+        <!-- Leyenda -->
+        <div class="flex items-center gap-x-4 gap-y-1 flex-wrap mt-4 text-[10px] font-mono text-slate-500">
+          <span class="font-bold text-slate-600">GESTIÓN ATFM:</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#f2cf2e"></span>Regulado (CTOT) · nivel en cian</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#4fbf3f"></span>Liberado</span>
+          <span class="inline-flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm border border-slate-300" style="background:#dfe3e6"></span>Sin gestión</span>
+          <span class="ml-2 font-bold text-slate-600">CICLO:</span>
+          <span>LISTA ✓ = entregar · RBACK… = esperando readback · RBACK ✓ = recibido · ✎ = editar</span>
+        </div>
       </main>`;
     wire();
   }

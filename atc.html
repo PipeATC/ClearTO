@@ -25,6 +25,77 @@
     .pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
     .pt-safe { padding-top: env(safe-area-inset-top, 0px); }
     input:focus { outline: none; box-shadow: none; }
+
+    /* ============ Franja electrónica (estilo EFS real) ============ */
+    .efs { display:flex; flex-direction:column; gap:4px; }
+    .strip { display:flex; align-items:stretch; min-height:70px; background:#dfe3e6;
+             border:1px solid #7f878f; border-radius:2px; color:#111a22; overflow:hidden;
+             box-shadow:0 1px 0 rgba(0,0,0,.28); font-family:'JetBrains Mono',ui-monospace,monospace; }
+    .strip.ack { border-color:#2f8a27; }
+    .cel { border-right:1px solid #aab1b8; padding:4px 6px; display:flex; flex-direction:column;
+           justify-content:space-between; position:relative; }
+    .cel:last-child { border-right:0; }
+    .rw { display:flex; align-items:center; justify-content:space-between; gap:4px; }
+
+    .c-id { width:158px; }
+    .cs { font-size:16px; font-weight:700; letter-spacing:.06em; padding:1px 4px; margin:-1px -2px 0 -4px; white-space:nowrap; }
+    .cs.b-green  { background:#4fbf3f; color:#08210a; }
+    .cs.b-yellow { background:#f2cf2e; color:#2a2400; }
+    .c-id .ty { font-size:12px; font-weight:600; color:#2b3742; }
+    .c-id .ft { font-size:12px; font-weight:700; }
+    .plt { font-size:9px; font-weight:700; color:#0b62b6; letter-spacing:.08em; }
+
+    .c-time { width:70px; }
+    .cfl { align-self:flex-start; padding:0 5px; font-weight:700; font-size:13px; }
+    .cfl.atfm { background:#5fd3e6; border:1px solid #2f9fb5; }
+    .ctot { font-size:10px; color:#155e75; font-weight:700; }
+
+    .c-route { width:196px; }
+    .c-route .fix { font-size:12px; font-weight:600; }
+    .c-route .awy { color:#5a656e; }
+    .tick { border-left:2px solid #6b7680; margin:1px 0 1px 2px; height:9px; }
+    .c-route .sid { font-size:13px; font-weight:700; }
+
+    .c-clr { width:130px; }
+    .clr-top { text-align:right; line-height:1.05; position:relative; z-index:1; }
+    .clr-top .lvl { font-size:14px; font-weight:700; }
+    .clr-top .rcle { font-size:11px; color:#3a4750; font-weight:600; }
+    .bigB { position:absolute; left:50%; top:50%; transform:translate(-50%,-52%);
+            font-size:52px; font-weight:700; color:#c2c9ce; z-index:0; pointer-events:none; }
+    .freq { position:relative; z-index:1; text-align:center; font-size:12px; font-weight:600; }
+
+    .c-ssr { width:64px; align-items:center; justify-content:center; background:#e7eaed; }
+    .c-ssr .lab { font-size:9px; color:#6a747c; letter-spacing:.1em; }
+    .c-ssr .val { font-size:16px; font-weight:700; letter-spacing:.05em; }
+
+    .c-coord { width:120px; }
+    .c-coord .nt { flex:1; }
+    .c-coord .cd { text-align:center; font-size:11px; font-weight:700; color:#3a4750; letter-spacing:.06em; }
+    .aro { background:#ff4f7f; color:#2a0011; font-weight:700; font-size:11px; padding:1px 7px; }
+    .stand { font-size:12px; font-weight:700; }
+
+    .c-act { width:118px; align-items:stretch; gap:3px; padding:5px; }
+    .abtn { background:linear-gradient(#eef1f3,#c6ccd1); border:1px solid #9aa1a8; border-top-color:#fff;
+            box-shadow:inset 0 1px 0 #fff; border-radius:2px; font-size:11px; font-weight:700; color:#26313a;
+            text-align:center; padding:4px 0; letter-spacing:.04em; cursor:pointer;
+            font-family:'JetBrains Mono',ui-monospace,monospace; width:100%; }
+    .abtn:active { transform:translateY(1px); }
+    .abtn.lista { background:linear-gradient(#7ee06f,#37a52a); color:#06230a; border-color:#2f8a27; }
+    .abtn.rback { background:linear-gradient(#eef1f3,#c6ccd1); color:#455; cursor:default; }
+    .abtn.rback.done { background:linear-gradient(#5fce53,#3fae34); color:#06230a; border-color:#2f8a27; cursor:default; }
+    .arow { display:flex; gap:3px; align-items:center; }
+    .drop { width:22px; flex:0 0 auto; }
+    .pencil { color:#c58a2a; cursor:pointer; padding:0 2px; font-size:14px; }
+
+    /* Formulario de edición inline bajo la franja */
+    .efs-edit { background:#eef1f3; border:1px solid #7f878f; border-top:0; border-radius:0 0 2px 2px;
+                margin-top:-5px; padding:8px 10px; display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+                font-family:'JetBrains Mono',ui-monospace,monospace; }
+    .efs-edit label { display:flex; flex-direction:column; gap:2px; }
+    .efs-edit .l { font-size:9px; color:#5a656e; text-transform:uppercase; letter-spacing:.08em; }
+    .efs-edit input { border:1px solid #9aa1a8; border-radius:2px; padding:3px 5px; font-size:13px; font-weight:700;
+                      color:#111a22; text-transform:uppercase; font-family:inherit; }
+    .efs-edit .acts { grid-column:1 / -1; display:flex; justify-content:flex-end; gap:6px; }
   </style>
 </head>
 <body class="bg-surface-container-high font-body text-navy antialiased">

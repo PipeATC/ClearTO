@@ -84,18 +84,21 @@ window.LINKS = [
 //   'delivered'    -> el piloto abrió la autorización (aún sin colacionar)
 //   'acknowledged' -> readback digital (WILCO) recibido; ciclo cerrado
 //
-// TODO(Felipe): confirmar/ajustar dos campos que la imagen no deja 100% claros:
-//   1) SSR: solo LAE2541 muestra 5370 en la franja; el resto van con códigos
-//      PLAUSIBLES pero SIMULADOS (marcados). Corrige con los reales.
-//   2) level ("280 RCLE"): lo interpreté como nivel autorizado inicial
-//      (RCLE = recleared). Si "280" es otra cosa (p. ej. límite de ascenso),
-//      dímelo y lo remodelo.
+// Notas (confirmadas con Felipe):
+//   - SSR: solo LAE2541=5370 venía en la franja; el resto son simulados pero
+//     ACEPTADOS como válidos para la maqueta.
+//   - level "RCLE" = "request level change en route" → al piloto se le muestra
+//     traducido: "espere nivel superior en ruta" (ver app.js levelNoteText).
+//   - atfm: estado de GESTIÓN ATFM del vuelo, solo estético en la maqueta.
+//     "regulado" (con CTOT) → banda ámbar + nivel en cian;
+//     "liberado" → banda verde; "" → sin banda. Independiente del stripState.
 // ============================================================
 window.FLIGHTS = [
   {
     callsign: "LXP376", type: "A20N", wtc: "M",
     adep: "SCEL", ades: "SCCF", adesCity: "BALMACEDA",
     eobt: "1845", stand: "B22", rfl: "F360",
+    atfm: "regulado", ctot: "1902",
     stripState: "pending",
     clearance: {
       limit: "SCCF", limitName: "BALMACEDA",
@@ -112,6 +115,7 @@ window.FLIGHTS = [
     callsign: "JAT044", type: "A20N", wtc: "M",
     adep: "SCEL", ades: "SCCF", adesCity: "BALMACEDA",
     eobt: "1835", stand: "A12A", rfl: "F360",
+    atfm: "",
     stripState: "pending",
     clearance: {
       limit: "SCCF", limitName: "BALMACEDA",
@@ -128,6 +132,7 @@ window.FLIGHTS = [
     callsign: "LAN740", type: "A321", wtc: "M",
     adep: "SCEL", ades: "SBPA", adesCity: "PORTO ALEGRE",
     eobt: "1815", stand: "D2", rfl: "F270",
+    atfm: "liberado",
     stripState: "ready",
     clearance: {
       limit: "SBPA", limitName: "PORTO ALEGRE",
@@ -144,6 +149,7 @@ window.FLIGHTS = [
     callsign: "LAN102", type: "A321", wtc: "M",
     adep: "SCEL", ades: "SCSE", adesCity: "LA SERENA",
     eobt: "1810", stand: "B28", rfl: "F260",
+    atfm: "regulado", ctot: "1828",
     stripState: "ready",
     clearance: {
       limit: "SCSE", limitName: "LA SERENA",
@@ -160,6 +166,7 @@ window.FLIGHTS = [
     callsign: "LAE2541", type: "B763", wtc: "H",
     adep: "SCEL", ades: "KMIA", adesCity: "MIAMI",
     eobt: "1800", stand: "R41", rfl: "F320",
+    atfm: "",
     stripState: "acknowledged",
     clearance: {
       limit: "KMIA", limitName: "MIAMI",
@@ -176,6 +183,7 @@ window.FLIGHTS = [
     callsign: "LAP1325", type: "A320", wtc: "M",
     adep: "SCEL", ades: "SGAS", adesCity: "ASUNCIÓN",
     eobt: "1830", stand: "F3A", rfl: "F370",
+    atfm: "liberado",
     stripState: "pending",
     clearance: {
       limit: "SGAS", limitName: "ASUNCIÓN",

@@ -51,6 +51,13 @@ El controlador también puede **editar** la autorización inline (nivel, SSR,
 ruta, SID, frecuencia…) y **RETIRAR** una entrega. Todo se sincroniza al
 instante por WebSocket (ver §3.1).
 
+La franja del controlador replica el **estilo EFS real** (fondo gris, celdas con
+divisorias, monoespaciado, caja ARO, gran "B" estética, botones RBACK/Form). La
+**banda de color del indicativo** refleja la **gestión ATFM** (`atfm` en
+`data.js`): ámbar = regulado (con CTOT y nivel en cian), verde = liberado, sin
+banda = sin gestión. Es independiente del `stripState` (el ciclo de entrega vive
+en los botones LISTA/RBACK). El CSS de la franja está en `atc.html` (`<style>`).
+
 ### Modelo de estados de la franja (`stripState` en `data.js`)
 
 | Estado          | Significado                                        | En la UI del piloto |
@@ -168,9 +175,10 @@ inline del controlador se sincroniza; y el modo offline persiste tras recarga.
 2. **D-ATIS** — toggle DEP (INFO ROMEO) / ARR (INFO QUEBEC), delta vs ATIS previo,
    métricas (viento, QNH, visibilidad, temp/rocío), pistas activas, telegrama raw
    con copiar/imprimir, confirmar lectura.
-3. **D-Clearance** — **corazón de la app**: buscador de vuelo, lista de franjas de
-   salida con su estado, simulador de controlador (maqueta), y detalle de la
-   autorización con el botón **WILCO** que dispara el readback digital.
+3. **D-Clearance** — **corazón de la app**: buscador de vuelo → **ASIGNAR ESTE
+   VUELO** → autorización en orden **CRAFT** (sin estado de otros vuelos) → botón
+   **WILCO** que dispara el readback digital. Si el controlador aún no libera,
+   muestra "en espera".
 4. **Historial** — registro de transmisiones (PDC, D-ATIS, NOTAM) con estados
    WILCO/ACK, superseded, completed; export a "binder de vuelo (PDF)".
 
