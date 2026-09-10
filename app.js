@@ -54,7 +54,7 @@
       `${a.temp}/${a.dew} Q${a.qnh} NOSIG`,
       `APCH ILS Y ${a.arrRwy}`,
       "EXP SALIDA FLW SID SEGUN PLAN",
-      "CONTACTO SANTIAGO CLNC 121.1 TRAS COLACION",
+      `CONTACTO SANTIAGO AUTORIZACIONES ${SCEL.freqs.delivery} TRAS COLACION`,
       "--- TRANSMISION DIRECTA VIA APP CLEARTO ---",
       "DGAC SCEL ---"
     ].join("\n");
@@ -64,13 +64,19 @@
     const issued = addMin(T0, -(c.issuedAgoMin || 0));
     return { issued, expires: addMin(issued, c.validForMin || 60) };
   }
+  // Traducción de la nota de nivel. RCLE = "request level change en route".
+  function levelNoteText(n) {
+    if (n === "RCLE") return "Espere nivel superior en ruta";
+    return n || "";
+  }
+
   // Telegrama PDC crudo (orden CRAFT), armado con el tiempo de emisión vivo.
   function pdcRaw(f, t) {
     const c = f.clearance;
     return [
       `PDC SCEL ${zCompact(t.issued)} ${f.callsign}`,
       `CLRD TO ${c.limit} VIA ${c.route}`,
-      `${c.level}${c.levelNote ? " " + c.levelNote : ""}`,
+      `${c.level}${c.levelNote ? " · " + levelNoteText(c.levelNote).toUpperCase() : ""}`,
       `DEP RWY ${c.rwy} SID ${c.sid}`,
       `SQUAWK ${c.ssr}`,
       `FREQ ${c.freq}`,
@@ -245,8 +251,15 @@
               ${met("QNH", s.qnh, s.qnhInHg)}
             </div>
             <div class="flex items-center justify-between text-[11px] font-mono text-slate-500 pt-0.5">
-              <span>TRANSITION LEVEL: <span class="text-navy font-bold">${s.transitionLevel}</span></span>
+              <span>TRANS ALT: <span class="text-navy font-bold">${s.transitionAlt}</span></span>
+              <span>TL: <span class="text-navy font-bold">${s.transitionLevel}</span></span>
               <span>ELEV: <span class="text-navy font-bold">${s.elevation}</span></span>
+            </div>
+            <div class="grid grid-cols-4 gap-2 pt-1 border-t border-slate-100">
+              ${met("FIR", s.fir, "SANTIAGO")}
+              ${met("MAG VAR", s.magVar, "2022")}
+              ${met("ARFF", s.arff, "SEI")}
+              ${met("TEMP REF", s.refTemp, "ISA+")}
             </div>
           </div>
         `)}
@@ -334,7 +347,7 @@
                 <span class="text-[11px] text-slate-500 font-mono">(APP SECURE UPLINK)</span>
               </div>
             </div>
-            <span class="text-[11px] px-2 py-1 rounded bg-sky-50 text-sky-800 font-mono font-semibold border border-sky-200/60">132.125 TWR</span>
+            <span class="text-[11px] px-2 py-1 rounded bg-sky-50 text-sky-800 font-mono font-semibold border border-sky-200/60">${SCEL.freqs.atisDep} D-ATIS</span>
           </div>
         `)}
 
@@ -583,7 +596,6 @@
     }
 
     // ----- Autorización liberada: orden CRAFT + readback -----
-    const ssrBadge = c.ssrSim ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-mono font-bold border border-amber-300 shrink-0">SIM</span>` : "";
     return `
       <div class="flex flex-col w-full px-4 space-y-3 pt-3 select-none">
         ${backBtn}
@@ -602,11 +614,11 @@
             <div class="flex flex-col gap-2">
               ${craftRow(1, "Límite", `${c.limit} <span class="text-slate-400 font-normal">· ${c.limitName}</span>`)}
               ${craftRow(2, "Ruta", c.route)}
-              ${craftRow(3, "Nivel", `${c.level}${c.levelNote ? ` <span class="text-slate-400 font-normal">${c.levelNote}</span>` : ""}`)}
+              ${craftRow(3, "Nivel", `${c.level}${c.levelNote ? `<span class="block text-[10px] text-slate-500 font-normal normal-case leading-tight mt-0.5">${levelNoteText(c.levelNote)}</span>` : ""}`)}
               ${craftRow(4, "Pista", "RWY " + c.rwy)}
               ${craftRow(5, "SID", c.sid)}
               ${craftRow(6, "Frecuencia", c.freq)}
-              ${craftRow(7, "SSR", c.ssr, { hl: true, badge: ssrBadge })}
+              ${craftRow(7, "SSR", c.ssr, { hl: true })}
             </div>
           </div>
         `)}

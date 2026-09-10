@@ -5,21 +5,28 @@
 // inicial y el fallback offline (GitHub Pages) por localStorage.
 // ============================================================
 
-// Estado del aeródromo SCEL (Comodoro Arturo Merino Benítez / Pudahuel)
-// TODO(Felipe): reemplazar por datos reales del eAIP SCEL cuando lo compartas
-// (esta sección alimenta el Tablero: pistas, TL, elevación, frecuencias…).
+// Estado del aeródromo SCEL (Arturo Merino Benítez / Pudahuel).
+// Datos generales tomados del eAIP Chile (AD 2 SCEL AMDT 67 · cartas AMDT 103).
+// Los valores meteorológicos son simulados (maqueta); los aeronáuticos son reales.
 window.SCEL = {
   icao: "SCEL",
   iata: "SCL",
   name: "PUDAHUEL",
+  fullName: "ARTURO MERINO BENÍTEZ",
+  fir: "SCEZ",
+  arp: "3324S 07048W",
   condition: "VMC",
   landingRwy: "17L",
   landingProc: "ILS Y",
   depRwy: "17R",
-  depProc: "RNAV 1",
-  transitionLevel: "FL195",
-  transitionAlt: "18000 FT",
+  depProc: "RNAV (SID)",
+  transitionLevel: "POR ATC",
+  transitionAlt: "10,000 FT",
   elevation: "1,555 FT",
+  magVar: "1.1°E",
+  refTemp: "30°C",
+  arff: "CAT 9",
+  // Meteorología: simulada (en producción vendría del METAR/ATIS real).
   wind: "180/08",
   windUnit: "KT",
   vis: ">10K",
@@ -31,7 +38,8 @@ window.SCEL = {
     time: "15:28Z",
     text: "ATTN: Flock of birds reported in vicinity threshold RWY 17L. Exercise vigilance on final approach."
   },
-  freqs: { delivery: "121.10", ground: "121.90", tower: "118.10" }
+  // Frecuencias ATS reales (AD 2.18): CLR/DLVRY 136.70 · GND E 122.20 · TWR 118.10.
+  freqs: { delivery: "136.70", ground: "122.20", tower: "118.10", app: "119.70", atisDep: "132.70", atisArr: "132.10" }
 };
 
 // D-ATIS (salida y llegada)

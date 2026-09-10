@@ -92,8 +92,6 @@
           <span class="material-symbols-outlined text-[18px]">check_circle</span> MARCAR LISTA</button>`;
     }
 
-    const ssrSim = c.ssrSim ? `<span class="text-[8px] px-1 py-0.5 rounded bg-amber-100 text-amber-700 font-mono font-bold border border-amber-300 ml-1">SIM</span>` : "";
-
     const body = isEditing ? `
       <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-200">
         ${field("limit", "Límite", c.limit)}
@@ -116,7 +114,7 @@
         ${cell("Pista", "RWY " + c.rwy, "text-sky-700")}
         ${cell("SID", c.sid)}
         ${cell("Frecuencia", c.freq)}
-        ${cell("SSR", c.ssr + ssrSim, "text-amber-700")}
+        ${cell("SSR", c.ssr, "text-amber-700")}
       </div>`;
 
     return `
