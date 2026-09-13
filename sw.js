@@ -1,10 +1,11 @@
 // ClearTO — Service Worker (maqueta). Cache-first para el app shell.
-const CACHE = "clearto-v2";
+const CACHE = "clearto-v3";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./data.js",
+  "./netlink.js",
   "./app.js",
   "./vendor/jspdf.umd.min.js",
   "./manifest.webmanifest",

@@ -4,7 +4,7 @@
  *  El resultado (styles.css) SÍ se versiona; node_modules/ no. */
 module.exports = {
   darkMode: "class",
-  content: ["./index.html", "./app.js", "./data.js"],
+  content: ["./index.html", "./atc.html", "./app.js", "./atc.js", "./data.js"],
   // Clases construidas dinámicamente (p. ej. dot("emerald") / dot("sky"))
   // que el scanner de Tailwind no puede ver como literales.
   safelist: ["bg-emerald-500", "bg-sky-500"],
