@@ -48,18 +48,30 @@ window.SCEL = {
 // telegrama crudo se arma en app.js con esos tiempos para que sea consistente.
 window.ATIS = {
   dep: {
+    service: "DEP",
     letter: "R", word: "ROMEO",
     issuedAgoMin: 6, validForMin: 60,
     wind: "190/11", windVrb: "160°-220°",
     qnh: "1015", qnhInHg: "29.97",
-    vis: "10 KM+", visNote: "CAVOK", clouds: "FEW 4000 · BKN 10000",
+    // No es CAVOK: hay nubosidad por debajo de 1500 m (FEW 4000). Visibilidad ≥10 km.
+    vis: "10 KM+", visNote: "10 KM O MÁS", clouds: "FEW 4000 · BKN 10000",
     temp: "19", dew: "08", spread: "11", rh: "52",
     depRwy: "17R", arrRwy: "17L"
   },
+  // LLEGADA (INFO QUEBEC): servicio independiente con su propia meteorología y
+  // aproximación esperada. Emitida un poco antes que la de salida (INFO ROMEO),
+  // por eso el delta de ROMEO se calcula contra QUEBEC (QNH 1016→1015, viento
+  // 200→190 = viró 10° a la izquierda).
   arr: {
+    service: "ARR",
     letter: "Q", word: "QUEBEC",
-    issuedAgoMin: 66, validForMin: 60,
-    superseded: true
+    issuedAgoMin: 9, validForMin: 60,
+    landingProc: "ILS Y",
+    wind: "200/12", windVrb: "170°-230°",
+    qnh: "1016", qnhInHg: "30.00",
+    vis: "10 KM+", visNote: "10 KM O MÁS", clouds: "FEW 4000 · BKN 10000",
+    temp: "18", dew: "08", spread: "10", rh: "55",
+    depRwy: "17R", arrRwy: "17L"
   }
 };
 
