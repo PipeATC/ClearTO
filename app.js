@@ -44,20 +44,52 @@
     const issued = addMin(T0, -(a.issuedAgoMin || 0));
     return { issued, valid: addMin(issued, a.validForMin || 60) };
   }
-  // Telegrama D-ATIS crudo, armado con el tiempo de emisión vivo.
+  // ---------- Fraseología ATIS (estructura OACI: Anexo 11 / Doc 4444) ----------
+  // Los datos crudos viven abreviados en data.js (ej. viento "190/11", nubes
+  // "FEW 4000 · BKN 10000"); estos helpers los expanden a la fraseología hablada
+  // estándar que se transmite en el telegrama.
+  function windSpoken(w, vrb) {
+    const m = (w || "").match(/^\s*(\d{2,3})\s*\/\s*(\d+)/);
+    let s = m ? `SURFACE WIND ${m[1]} DEGREES ${m[2]} KNOTS` : `SURFACE WIND ${w}`;
+    const v = (vrb || "").match(/(\d{2,3}).*?(\d{2,3})/);
+    if (v) s += `, VARIABLE BETWEEN ${v[1]} AND ${v[2]} DEGREES`;
+    return s;
+  }
+  function visSpoken(vis) {
+    const m = (vis || "").match(/(\d+)\s*KM/i);
+    if (m) return `VISIBILITY ${m[1]} KILOMETERS${/\+/.test(vis) ? " OR MORE" : ""}`;
+    return `VISIBILITY ${vis}`;
+  }
+  const CLOUD_WORDS = { FEW: "FEW", SCT: "SCATTERED", BKN: "BROKEN", OVC: "OVERCAST" };
+  function cloudsSpoken(s) {
+    return (s || "").split("·").map(p => p.trim()).filter(Boolean).map(p => {
+      const m = p.match(/^([A-Z]{3})\s*0*(\d+)/);
+      return m ? `${CLOUD_WORDS[m[1]] || m[1]} ${m[2]} FEET` : p;
+    }).join(", ");
+  }
+  // Normaliza "10,000 FT" → "10000 FEET" y "POR ATC" → "BY ATC".
+  function feetSpoken(s) { return (s || "").replace(/,/g, "").replace(/\bFT\b/i, "FEET"); }
+  function tlSpoken(s) { return /por\s*atc/i.test(s || "") ? "BY ATC" : (s || ""); }
+
+  // Telegrama D-ATIS crudo (SALIDA), armado en orden estándar OACI con la hora de
+  // emisión viva. Idioma: fraseología aeronáutica en inglés (como se transmite).
   function atisRaw(a, t) {
-    return [
-      `SCEL ATIS DEP ${a.letter} ${zCompact(t.issued)}`,
-      `RWY ${a.depRwy} EN USO`,
-      `VIENTO ${a.wind}KT VRB 160-220`,
-      "VIS 10KM FEW040 BKN100",
-      `${a.temp}/${a.dew} Q${a.qnh} NOSIG`,
-      `APCH ILS Y ${a.arrRwy}`,
-      "EXP SALIDA FLW SID SEGUN PLAN",
-      `CONTACTO SANTIAGO AUTORIZACIONES ${SCEL.freqs.delivery} TRAS COLACION`,
-      "--- TRANSMISION DIRECTA VIA APP ClearTO ---",
-      "DGAC SCEL ---"
-    ].join("\n");
+    const L = [
+      `SANTIAGO DEPARTURE INFORMATION ${a.word}`,
+      `TIME ${zCompact(t.issued).replace("Z", "")} UTC`,
+      `DEPARTURE RUNWAY ${a.depRwy}`,
+      `TRANSITION ALTITUDE ${feetSpoken(SCEL.transitionAlt)}, TRANSITION LEVEL ${tlSpoken(SCEL.transitionLevel)}`
+    ];
+    if (SCEL.caution && /bird/i.test(SCEL.caution.text || ""))
+      L.push("CAUTION BIRD ACTIVITY IN THE VICINITY OF THE AERODROME");
+    L.push(windSpoken(a.wind, a.windVrb));
+    L.push(visSpoken(a.vis));
+    if (a.clouds) L.push(cloudsSpoken(a.clouds));
+    L.push(`TEMPERATURE ${a.temp}, DEW POINT ${a.dew}`);
+    L.push(`QNH ${a.qnh} HECTOPASCALS`);
+    L.push("TREND NOSIG");
+    L.push(`INFORM SANTIAGO GROUND OR CLEARANCE DELIVERY ON FIRST CONTACT YOU HAVE INFORMATION ${a.word}`);
+    return L.join("\n");
   }
   // Tiempos derivados de una clearance (emisión / expiración).
   function pdcTimes(c) {
