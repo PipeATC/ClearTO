@@ -71,25 +71,59 @@
   function feetSpoken(s) { return (s || "").replace(/,/g, "").replace(/\bFT\b/i, "FEET"); }
   function tlSpoken(s) { return /por\s*atc/i.test(s || "") ? "BY ATC" : (s || ""); }
 
-  // Telegrama D-ATIS crudo (SALIDA), armado en orden estándar OACI con la hora de
-  // emisión viva. Idioma: fraseología aeronáutica en inglés (como se transmite).
-  function atisRaw(a, t) {
+  // Advertencia de actividad de aves derivada de la caution del aeródromo.
+  // El alcance cambia según el servicio: en llegada es relevante el umbral de la
+  // pista de aterrizaje; en salida se generaliza al aeródromo.
+  function birdCaution(scope) {
+    if (!(SCEL.caution && /bird/i.test(SCEL.caution.text || ""))) return null;
+    return `CAUTION BIRD ACTIVITY IN THE VICINITY OF ${scope}`;
+  }
+  // Bloque meteorológico común (viento · visibilidad · nubes · temp/rocío · QNH ·
+  // tendencia) en fraseología hablada, compartido por SALIDA y LLEGADA. Si la
+  // condición es CAVOK se emite "CAVOK" y se omiten visibilidad y nubes.
+  function atisMetLines(a) {
+    const L = [windSpoken(a.wind, a.windVrb)];
+    if (/cavok/i.test(a.visNote || "")) {
+      L.push("CAVOK");
+    } else {
+      L.push(visSpoken(a.vis));
+      if (a.clouds) L.push(cloudsSpoken(a.clouds));
+    }
+    L.push(`TEMPERATURE ${a.temp}, DEW POINT ${a.dew}`);
+    L.push(`QNH ${a.qnh} HECTOPASCALS`);
+    L.push("TREND NOSIG");
+    return L;
+  }
+  // Telegramas D-ATIS crudos en orden estándar OACI (Anexo 11 / Doc 4444) con la
+  // hora de emisión viva. Idioma: fraseología aeronáutica en inglés (como se
+  // transmite). Un builder por servicio; atisRaw() despacha según a.service.
+  function atisRawDep(a, t) {
     const L = [
       `SANTIAGO DEPARTURE INFORMATION ${a.word}`,
       `TIME ${zCompact(t.issued).replace("Z", "")} UTC`,
       `DEPARTURE RUNWAY ${a.depRwy}`,
       `TRANSITION ALTITUDE ${feetSpoken(SCEL.transitionAlt)}, TRANSITION LEVEL ${tlSpoken(SCEL.transitionLevel)}`
     ];
-    if (SCEL.caution && /bird/i.test(SCEL.caution.text || ""))
-      L.push("CAUTION BIRD ACTIVITY IN THE VICINITY OF THE AERODROME");
-    L.push(windSpoken(a.wind, a.windVrb));
-    L.push(visSpoken(a.vis));
-    if (a.clouds) L.push(cloudsSpoken(a.clouds));
-    L.push(`TEMPERATURE ${a.temp}, DEW POINT ${a.dew}`);
-    L.push(`QNH ${a.qnh} HECTOPASCALS`);
-    L.push("TREND NOSIG");
+    const bc = birdCaution("THE AERODROME"); if (bc) L.push(bc);
+    atisMetLines(a).forEach(l => L.push(l));
     L.push(`INFORM SANTIAGO GROUND OR CLEARANCE DELIVERY ON FIRST CONTACT YOU HAVE INFORMATION ${a.word}`);
     return L.join("\n");
+  }
+  function atisRawArr(a, t) {
+    const L = [
+      `SANTIAGO ARRIVAL INFORMATION ${a.word}`,
+      `TIME ${zCompact(t.issued).replace("Z", "")} UTC`,
+      `EXPECT ${a.landingProc} APPROACH RUNWAY ${a.arrRwy}`,
+      `LANDING RUNWAY ${a.arrRwy}`,
+      `TRANSITION LEVEL ${tlSpoken(SCEL.transitionLevel)}`
+    ];
+    const bc = birdCaution(`THRESHOLD RUNWAY ${a.arrRwy}`); if (bc) L.push(bc);
+    atisMetLines(a).forEach(l => L.push(l));
+    L.push(`INFORM SANTIAGO APPROACH ON FIRST CONTACT YOU HAVE INFORMATION ${a.word}`);
+    return L.join("\n");
+  }
+  function atisRaw(a, t) {
+    return a.service === "ARR" ? atisRawArr(a, t) : atisRawDep(a, t);
   }
   // Tiempos derivados de una clearance (emisión / expiración).
   function pdcTimes(c) {
@@ -353,9 +387,12 @@
   // ============================================================
   let atisSide = "dep";
   function viewAtis() {
-    const a = ATIS.dep;
+    const isArr = atisSide === "arr";
+    const a = isArr ? ATIS.arr : ATIS.dep;
     const t = atisTimes(a);            // emisión / vigencia vivas
     const raw = atisRaw(a, t);         // telegrama con tiempo de emisión vivo
+    const svc = isArr ? "ARR" : "DEP";
+    const atisFreq = isArr ? SCEL.freqs.atisArr : SCEL.freqs.atisDep;
     const qbTime = zClock(atisTimes(ATIS.arr).issued); // INFO QUEBEC (previo)
     const bigMetric = (label, val, unit, sub, icon, color) => `
       ${card(`
@@ -384,26 +421,27 @@
                 <span class="text-[11px] text-slate-500 font-mono">(APP SECURE UPLINK)</span>
               </div>
             </div>
-            <span class="text-[11px] px-2 py-1 rounded bg-sky-50 text-sky-800 font-mono font-semibold border border-sky-200/60">${SCEL.freqs.atisDep} D-ATIS</span>
+            <span class="text-[11px] px-2 py-1 rounded bg-sky-50 text-sky-800 font-mono font-semibold border border-sky-200/60">${atisFreq} D-ATIS</span>
           </div>
         `)}
 
-        <!-- Delta vs previous -->
+        <!-- Delta vs previous (solo SALIDA: ROMEO comparada con la ATIS previa QUEBEC) -->
+        ${isArr ? "" : `
         <div class="w-full bg-[#fffbeb] border border-amber-200/90 rounded-xl p-3.5 shadow-sm flex items-start gap-3">
           <span class="material-symbols-outlined text-amber-700 text-[20px] shrink-0 mt-0.5">swap_horiz</span>
           <div class="flex flex-col min-w-0 flex-1">
             <span class="text-[11px] text-[#92400e] font-bold tracking-wider uppercase font-mono">DELTA VS INFO QUEBEC (${qbTime})</span>
             <p class="font-mono text-[12px] text-[#92400e] mt-0.5 leading-snug">QNH descendió <b>1 hPa</b> (1016→1015) · Viento viró <b>10° izquierda</b> · Temp de rocío estable.</p>
           </div>
-        </div>
+        </div>`}
 
         <!-- Toggle DEP/ARR -->
         <div class="grid grid-cols-2 gap-2">
           <button data-atis="dep" class="flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-[13px] ${atisSide==="dep" ? "bg-navy text-white shadow-sm" : "bg-white text-slate-500 border border-slate-200"}">
-            <span class="material-symbols-outlined text-[18px]">flight_takeoff</span> DEP · INFO ROMEO
+            <span class="material-symbols-outlined text-[18px]">flight_takeoff</span> DEP · INFO ${ATIS.dep.word}
           </button>
           <button data-atis="arr" class="flex items-center justify-center gap-2 py-3 rounded-lg font-bold text-[13px] ${atisSide==="arr" ? "bg-navy text-white shadow-sm" : "bg-white text-slate-500 border border-slate-200"}">
-            <span class="material-symbols-outlined text-[18px]">flight_land</span> ARR · INFO QUEBEC
+            <span class="material-symbols-outlined text-[18px]">flight_land</span> ARR · INFO ${ATIS.arr.word}
           </button>
         </div>
 
@@ -432,7 +470,7 @@
           <div class="p-4 space-y-2.5">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-2">${dot("sky")}<span class="text-[13px] font-bold text-navy font-mono tracking-wide">ACTIVE RUNWAYS</span></div>
-              <span class="text-[11px] text-sky-700 font-mono font-semibold">ILS / VISUAL APCH</span>
+              <span class="text-[11px] text-sky-700 font-mono font-semibold">${isArr ? a.landingProc + " APCH" : "ILS / VISUAL APCH"}</span>
             </div>
             <div class="grid grid-cols-2 gap-2.5">
               <div class="flex items-center justify-between bg-slate-50 border border-slate-200/80 rounded-lg p-3">
@@ -459,7 +497,7 @@
               <button data-copy="${encodeURIComponent(raw)}" class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
                 <span class="material-symbols-outlined text-[18px]">content_copy</span> COPIAR TEXTO
               </button>
-              <button data-print="${encodeURIComponent(raw)}" data-print-title="D-ATIS SCEL DEP · INFO ${a.word} ${zCompact(t.issued)}" class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
+              <button data-print="${encodeURIComponent(raw)}" data-print-title="D-ATIS SCEL ${svc} · INFO ${a.word} ${zCompact(t.issued)}" class="flex items-center justify-center gap-1.5 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold text-[13px] active:scale-[0.99] transition">
                 <span class="material-symbols-outlined text-[18px]">print</span> IMPRIMIR
               </button>
             </div>
