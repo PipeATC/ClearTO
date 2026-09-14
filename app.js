@@ -69,13 +69,18 @@
     if (n === "RCLE") return "Espere nivel superior en ruta";
     return n || "";
   }
+  // En la franja se escribe "__/" (ruta plan de vuelo); en el texto que lee el
+  // piloto se expande a "Ruta Plan de Vuelo".
+  function routeText(route) {
+    return (route || "").replace(/__\//g, "Ruta Plan de Vuelo").trim();
+  }
 
   // Telegrama PDC crudo (orden CRAFT), armado con el tiempo de emisión vivo.
   function pdcRaw(f, t) {
     const c = f.clearance;
     return [
       `PDC SCEL ${zCompact(t.issued)} ${f.callsign}`,
-      `CLRD TO ${c.limit} VIA ${c.route}`,
+      `CLRD TO ${c.limit} VIA ${routeText(c.route)}`,
       `${c.level}${c.levelNote ? " · " + levelNoteText(c.levelNote).toUpperCase() : ""}`,
       `DEP RWY ${c.rwy} SID ${c.sid}`,
       `SQUAWK ${c.ssr}`,
@@ -613,7 +618,7 @@
             </div>
             <div class="flex flex-col gap-2">
               ${craftRow(1, "Límite", `${c.limit} <span class="text-slate-400 font-normal">· ${c.limitName}</span>`)}
-              ${craftRow(2, "Ruta", c.route)}
+              ${craftRow(2, "Ruta", routeText(c.route))}
               ${craftRow(3, "Nivel", `${c.level}${c.levelNote ? `<span class="block text-[10px] text-slate-500 font-normal normal-case leading-tight mt-0.5">${levelNoteText(c.levelNote)}</span>` : ""}`)}
               ${craftRow(4, "Pista", "RWY " + c.rwy)}
               ${craftRow(5, "SID", c.sid)}

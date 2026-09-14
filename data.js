@@ -108,7 +108,7 @@ window.FLIGHTS = [
       sid: "DILOK1R",
       freq: "119.7",
       ssr: "5371", ssrSim: true,
-      issuedAgoMin: 2, validForMin: 90
+      issuedAgoMin: 0, validForMin: 90
     }
   },
   {
@@ -125,7 +125,7 @@ window.FLIGHTS = [
       sid: "DILOK1R",
       freq: "119.7",
       ssr: "5372", ssrSim: true,
-      issuedAgoMin: 2, validForMin: 90
+      issuedAgoMin: 0, validForMin: 90
     }
   },
   {
@@ -133,16 +133,16 @@ window.FLIGHTS = [
     adep: "SCEL", ades: "SBPA", adesCity: "PORTO ALEGRE",
     eobt: "1815", stand: "D2", rfl: "F270",
     atfm: "liberado",
-    stripState: "ready",
+    stripState: "pending",
     clearance: {
       limit: "SBPA", limitName: "PORTO ALEGRE",
-      route: "ALBAL",
+      route: "ALBAL __/",
       level: "FL270", levelNote: "",
       rwy: "17R",
       sid: "ALBAL7C",
       freq: "119.7",
       ssr: "5373", ssrSim: true,
-      issuedAgoMin: 3, validForMin: 90
+      issuedAgoMin: 0, validForMin: 90
     }
   },
   {
@@ -150,7 +150,7 @@ window.FLIGHTS = [
     adep: "SCEL", ades: "SCSE", adesCity: "LA SERENA",
     eobt: "1810", stand: "B28", rfl: "F260",
     atfm: "regulado", ctot: "1828",
-    stripState: "ready",
+    stripState: "pending",
     clearance: {
       limit: "SCSE", limitName: "LA SERENA",
       route: "ANDAK UQ802",
@@ -159,7 +159,7 @@ window.FLIGHTS = [
       sid: "DONTI1R",
       freq: "119.7",
       ssr: "5374", ssrSim: true,
-      issuedAgoMin: 1, validForMin: 90
+      issuedAgoMin: 0, validForMin: 90
     }
   },
   {
@@ -167,16 +167,16 @@ window.FLIGHTS = [
     adep: "SCEL", ades: "KMIA", adesCity: "MIAMI",
     eobt: "1800", stand: "R41", rfl: "F320",
     atfm: "",
-    stripState: "acknowledged",
+    stripState: "pending",
     clearance: {
       limit: "KMIA", limitName: "MIAMI",
-      route: "DONTI",
+      route: "DONTI __/",
       level: "FL280", levelNote: "RCLE",
       rwy: "17R",
       sid: "DONTI5B",
       freq: "119.7",
       ssr: "5370", ssrSim: false,
-      issuedAgoMin: 150, validForMin: 60
+      issuedAgoMin: 0, validForMin: 90
     }
   },
   {
@@ -187,13 +187,13 @@ window.FLIGHTS = [
     stripState: "pending",
     clearance: {
       limit: "SGAS", limitName: "ASUNCIÓN",
-      route: "ALBAL",
+      route: "ALBAL __/",
       level: "FL270", levelNote: "RCLE",
       rwy: "17R",
       sid: "ALBAL7C",
       freq: "119.7",
       ssr: "5375", ssrSim: true,
-      issuedAgoMin: 2, validForMin: 90
+      issuedAgoMin: 0, validForMin: 90
     }
   }
 ];
